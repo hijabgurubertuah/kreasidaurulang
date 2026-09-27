@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   UploadCloud,
   FileSpreadsheet,
@@ -79,6 +80,7 @@ export const AdminSyncModal: React.FC<AdminSyncModalProps> = ({
   }, [isOpen]);
 
   if (!isOpen) return null;
+  if (typeof document === 'undefined') return null;
 
   // Handle pull data from online sheet link
   const handleFetchOnlineSheet = async () => {
@@ -217,9 +219,9 @@ export const AdminSyncModal: React.FC<AdminSyncModalProps> = ({
     setTimeout(() => setCopiedCodeId(null), 1500);
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 overflow-y-auto animate-fadeIn">
-      <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto max-h-[92vh]">
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-900/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto overscroll-contain">
+      <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto max-h-[88vh] sm:max-h-[92vh]">
         {/* Header */}
         <div className="flex items-center justify-between p-4 bg-slate-900 text-white">
           <div className="flex items-center space-x-2.5 min-w-0">
@@ -446,6 +448,7 @@ export const AdminSyncModal: React.FC<AdminSyncModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

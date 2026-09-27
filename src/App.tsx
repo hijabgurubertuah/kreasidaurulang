@@ -26,11 +26,15 @@ import {
   createTeacherCodeInDb,
   deleteTeacherCodeInDb,
   getStudentDocId,
+  saveStudentInDb,
+  deleteStudentInDb,
+  batchDeleteStudentsInDb,
+  batchSyncStudentsAndClasses,
+  updateStudentScoreInDb,
   clearAllStudentsInDb,
   clearAllTeacherCodesInDb,
   resetDatabaseToDefaultsInDb,
   deduplicateStudentsInDb,
-  commitStagedChangesToDb,
 } from './services/firestoreService';
 import { exportAllClassesToExcel } from './utils/excelExport';
 import { CheckCircle2, X } from 'lucide-react';
@@ -47,18 +51,9 @@ export default function App() {
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [adminModalTab, setAdminModalTab] = useState<'csv' | 'codes'>('csv');
   const [firebaseConnected, setFirebaseConnected] = useState(false);
-
-  // Staged / Pending Changes State to protect Firebase daily write quota
-  const [modifiedStudentIds, setModifiedStudentIds] = useState<Set<string>>(new Set());
-  const [pendingDeletedStudentIds, setPendingDeletedStudentIds] = useState<Set<string>>(new Set());
-  const [isSavingToFirebase, setIsSavingToFirebase] = useState(false);
   const [saveSuccessNotification, setSaveSuccessNotification] = useState<string | null>(null);
-  const savedSnapshotRef = useRef<Student[]>(DEFAULT_STUDENTS);
 
-  const pendingChangesCount = modifiedStudentIds.size + pendingDeletedStudentIds.size;
-  const hasPendingChanges = pendingChangesCount > 0;
-
-  // Initialize and listen to Firestore
+  // Initialize and listen to Firestore in real-time
   useEffect(() => {
     let isMounted = true;
 
@@ -67,22 +62,12 @@ export default function App() {
       console.warn('Initialize firestore error:', e)
     );
 
-    // Subscribe to students
+    // Subscribe to students with instant real-time sync across devices
     const unsubscribeStudents = listenToStudents(
       (updatedStudents) => {
         if (!isMounted) return;
         setFirebaseConnected(true);
-        // Only overwrite local state if user has no pending unsaved edits
-        setModifiedStudentIds((currModified) => {
-          setPendingDeletedStudentIds((currDeleted) => {
-            if (currModified.size === 0 && currDeleted.size === 0) {
-              setStudents(updatedStudents);
-              savedSnapshotRef.current = updatedStudents;
-            }
-            return currDeleted;
-          });
-          return currModified;
-        });
+        setStudents(updatedStudents);
       },
       () => setFirebaseConnected(false)
     );
@@ -125,41 +110,51 @@ export default function App() {
     }
   }, [students, currentUser?.identifier, currentUser?.role]);
 
-  // Update score with local staging - does NOT write to Firebase until "Simpan ke Firebase" is clicked
+  // Update score with immediate Firestore real-time persistence
   const handleUpdateScore = useCallback(
-    (studentId: string, newScore: number) => {
+    async (studentId: string, newScore: number) => {
       setStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, score: newScore } : s))
       );
-      setModifiedStudentIds((prev) => new Set(prev).add(studentId));
+      try {
+        await updateStudentScoreInDb(studentId, newScore);
+      } catch (err) {
+        console.error('Failed to update student score:', err);
+      }
     },
     []
   );
 
-  // Update notes with local staging - does NOT write to Firebase until "Simpan ke Firebase" is clicked
+  // Update notes with immediate Firestore real-time persistence
   const handleUpdateNotes = useCallback(
-    (studentId: string, notes: string) => {
+    async (studentId: string, notes: string) => {
       setStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, notes } : s))
       );
-      setModifiedStudentIds((prev) => new Set(prev).add(studentId));
+      const student = students.find((s) => s.id === studentId);
+      try {
+        await updateStudentScoreInDb(studentId, student?.score || 80, notes);
+      } catch (err) {
+        console.error('Failed to update student notes:', err);
+      }
     },
-    []
+    [students]
   );
 
-  // Admin student management - updates if same NISN, stages locally
-  const handleSaveStudent = (student: Student) => {
-    const cleanNisn = student.nisn.trim().toLowerCase();
-    const standardId = getStudentDocId(student.nisn);
+  // Admin student management - saves immediately to Firebase
+  const handleSaveStudent = async (student: Student) => {
+    const cleanNisn = student.nisn.trim();
+    const standardId = getStudentDocId(cleanNisn);
     const standardized: Student = {
       ...student,
       id: standardId,
-      nisn: student.nisn.trim(),
+      nisn: cleanNisn,
+      lastUpdated: new Date().toISOString(),
     };
 
     setStudents((prev) => {
       const idx = prev.findIndex(
-        (s) => s.id === standardId || s.nisn.trim().toLowerCase() === cleanNisn
+        (s) => s.id === standardId || s.nisn.trim().toLowerCase() === cleanNisn.toLowerCase()
       );
       if (idx !== -1) {
         const copy = [...prev];
@@ -169,117 +164,38 @@ export default function App() {
       return [standardized, ...prev];
     });
 
-    setModifiedStudentIds((prev) => new Set(prev).add(standardId));
-    setPendingDeletedStudentIds((prev) => {
-      const next = new Set(prev);
-      next.delete(standardId);
-      return next;
-    });
+    await saveStudentInDb(standardized);
   };
 
-  // Delete single student - stages locally
-  const handleDeleteStudent = (studentId: string) => {
+  // Delete single student - deletes immediately from Firebase
+  const handleDeleteStudent = async (studentId: string) => {
     setStudents((prev) => prev.filter((s) => s.id !== studentId));
-    setPendingDeletedStudentIds((prev) => new Set(prev).add(studentId));
-    setModifiedStudentIds((prev) => {
-      const next = new Set(prev);
-      next.delete(studentId);
-      return next;
-    });
+    await deleteStudentInDb(studentId);
+    setSaveSuccessNotification('Siswa berhasil dihapus langsung dari database Firebase.');
+    setTimeout(() => setSaveSuccessNotification(null), 3000);
   };
 
-  // Bulk Delete students - stages locally
-  const handleBulkDeleteStudents = (studentIds: string[]) => {
+  // Bulk Delete students - deletes immediately from Firebase seketika
+  const handleBulkDeleteStudents = async (studentIds: string[]) => {
     const idsSet = new Set(studentIds);
     setStudents((prev) => prev.filter((s) => !idsSet.has(s.id)));
-    setPendingDeletedStudentIds((prev) => {
-      const next = new Set(prev);
-      studentIds.forEach((id) => next.add(id));
-      return next;
-    });
-    setModifiedStudentIds((prev) => {
-      const next = new Set(prev);
-      studentIds.forEach((id) => next.delete(id));
-      return next;
-    });
+    const deletedCount = await batchDeleteStudentsInDb(studentIds);
+    setSaveSuccessNotification(
+      `${deletedCount} siswa berhasil dihapus seketika dari Firebase Firestore & tersinkronisasi ke seluruh perangkat!`
+    );
+    setTimeout(() => setSaveSuccessNotification(null), 4000);
   };
 
-  // Sync CSV data to state - stages locally with anti-duplication
+  // Sync CSV data to Firebase immediately with anti-duplication
   const handleSyncCsvData = async (
     newStudents: Student[],
     newClasses: ClassRoom[]
   ) => {
-    const ids = new Set<string>();
-    setStudents((prev) => {
-      const map = new Map<string, Student>();
-      prev.forEach((s) => map.set(s.nisn.trim().toLowerCase(), s));
-      newStudents.forEach((s) => {
-        const key = s.nisn.trim().toLowerCase();
-        const stdId = getStudentDocId(s.nisn);
-        ids.add(stdId);
-        const existing = map.get(key);
-        if (existing) {
-          map.set(key, { ...existing, ...s, id: stdId });
-        } else {
-          map.set(key, { ...s, id: stdId });
-        }
-      });
-      return Array.from(map.values());
-    });
-
-    if (newClasses.length > 0) {
-      setClasses((prev) => {
-        const map = new Map(prev.map((c) => [c.id, c]));
-        newClasses.forEach((c) => map.set(c.id, c));
-        return Array.from(map.values());
-      });
-    }
-
-    setModifiedStudentIds((prev) => {
-      const next = new Set(prev);
-      ids.forEach((id) => next.add(id));
-      return next;
-    });
-  };
-
-  // Save all staged changes to Firebase in 1 batch write
-  const handleSaveToFirebase = async () => {
-    if (pendingChangesCount === 0) return;
-    setIsSavingToFirebase(true);
-    try {
-      const studentsToSave = students.filter((s) => modifiedStudentIds.has(s.id));
-      const idsToDelete = Array.from(pendingDeletedStudentIds);
-
-      const res = await commitStagedChangesToDb({
-        upsertStudents: studentsToSave,
-        deletedStudentIds: idsToDelete,
-      });
-
-      setModifiedStudentIds(new Set());
-      setPendingDeletedStudentIds(new Set());
-      savedSnapshotRef.current = [...students];
-
-      setSaveSuccessNotification(
-        `Berhasil menyimpan ${res.writesCount} perubahan ke Firebase dalam 1 kali batch write! Kuota tulis harian Anda tetap hemat.`
-      );
-      setTimeout(() => setSaveSuccessNotification(null), 5000);
-    } catch (err: any) {
-      console.error('Failed to save to Firebase:', err);
-      alert(`Gagal menyimpan ke Firebase: ${err.message}`);
-    } finally {
-      setIsSavingToFirebase(false);
-    }
-  };
-
-  // Discard pending changes and revert to Firestore snapshot
-  const handleDiscardPendingChanges = () => {
-    if (window.confirm('Batalkan semua perubahan yang belum disimpan ke Firebase?')) {
-      setStudents([...savedSnapshotRef.current]);
-      setModifiedStudentIds(new Set());
-      setPendingDeletedStudentIds(new Set());
-      setSaveSuccessNotification('Perubahan lokal dibatalkan. Data dikembalikan ke database cloud.');
-      setTimeout(() => setSaveSuccessNotification(null), 3000);
-    }
+    await batchSyncStudentsAndClasses(newStudents, newClasses);
+    setSaveSuccessNotification(
+      `Berhasil menyinkronkan ${newStudents.length} siswa langsung ke Firebase Firestore!`
+    );
+    setTimeout(() => setSaveSuccessNotification(null), 4000);
   };
 
   // Create new Teacher Code
@@ -298,9 +214,6 @@ export default function App() {
   const handleClearAllStudents = async (): Promise<number> => {
     const count = await clearAllStudentsInDb();
     setStudents([]);
-    savedSnapshotRef.current = [];
-    setModifiedStudentIds(new Set());
-    setPendingDeletedStudentIds(new Set());
     return count;
   };
 
@@ -319,9 +232,6 @@ export default function App() {
     setStudents(DEFAULT_STUDENTS);
     setClasses(DEFAULT_CLASSES);
     setTeacherCodes(DEFAULT_TEACHER_CODES);
-    savedSnapshotRef.current = DEFAULT_STUDENTS;
-    setModifiedStudentIds(new Set());
-    setPendingDeletedStudentIds(new Set());
   };
 
   // Deduplicate students in Firebase
@@ -357,11 +267,6 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    if (hasPendingChanges) {
-      if (!window.confirm('Ada perubahan yang belum disimpan ke Firebase. Apakah Anda yakin ingin keluar?')) {
-        return;
-      }
-    }
     setCurrentUser(null);
     setSelectedClass(null);
     setActivePage('login');
@@ -383,14 +288,10 @@ export default function App() {
           onLogout={handleLogout}
           onExportAll={handleExportAll}
           firebaseConnected={firebaseConnected}
-          hasPendingChanges={hasPendingChanges}
-          pendingChangesCount={pendingChangesCount}
-          onSaveToFirebase={handleSaveToFirebase}
-          isSavingToFirebase={isSavingToFirebase}
         />
       )}
 
-      {/* Global Toast Notification for Save to Firebase */}
+      {/* Global Toast Notification */}
       {saveSuccessNotification && (
         <div className="fixed bottom-4 right-4 z-50 max-w-md bg-slate-900 text-white p-3.5 rounded-2xl shadow-2xl border border-emerald-500/40 flex items-center space-x-3 animate-fadeIn">
           <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
@@ -417,7 +318,7 @@ export default function App() {
           />
         )}
 
-        {/* Portal Admin (Atur NISN, Kode Guru, CSV & Pembersihan Data) */}
+        {/* Portal Admin (Atur NISN, Kode Guru, CSV & Database 1 GB) */}
         {activePage === 'admin-portal' && currentUser && currentUser.role === 'admin' && (
           <div className="pb-16 flex-1">
             <AdminPortalView
@@ -435,11 +336,7 @@ export default function App() {
               onClearTeacherCodes={handleClearTeacherCodes}
               onResetDatabase={handleResetDatabase}
               onDeduplicateStudents={handleDeduplicateStudents}
-              hasPendingChanges={hasPendingChanges}
-              pendingChangesCount={pendingChangesCount}
-              onSaveToFirebase={handleSaveToFirebase}
-              isSavingToFirebase={isSavingToFirebase}
-              onDiscardPendingChanges={handleDiscardPendingChanges}
+              firebaseConnected={firebaseConnected}
             />
           </div>
         )}
@@ -465,10 +362,6 @@ export default function App() {
               onBack={handleBackToDashboard}
               onUpdateScore={handleUpdateScore}
               onUpdateNotes={handleUpdateNotes}
-              hasPendingChanges={hasPendingChanges}
-              pendingChangesCount={pendingChangesCount}
-              onSaveToFirebase={handleSaveToFirebase}
-              isSavingToFirebase={isSavingToFirebase}
             />
           </div>
         )}

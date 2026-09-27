@@ -99,7 +99,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             )}
 
-            {/* Tombol Simpan ke Firebase untuk hemat kuota harian */}
+            {/* Status Real-time Firebase Sync */}
+            {currentUser && currentUser.role !== 'student' && !onSaveToFirebase && (
+              <div className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-900/70 rounded-xl border border-emerald-600/40 text-[11px] font-bold text-emerald-200">
+                <span className={`w-2 h-2 rounded-full ${firebaseConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                <span>{firebaseConnected ? 'Live Real-time' : 'Offline'}</span>
+              </div>
+            )}
+
+            {/* Tombol Simpan ke Firebase (opsional jika staging) */}
             {currentUser && currentUser.role !== 'student' && onSaveToFirebase && (
               <button
                 type="button"
@@ -112,7 +120,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
                 title={
                   hasPendingChanges
-                    ? `Ada ${pendingChangesCount} perubahan data belum disimpan ke Firebase. Klik untuk menyimpan dan menghemat kuota tulis harian.`
+                    ? `Ada ${pendingChangesCount} perubahan data belum disimpan ke Firebase.`
                     : 'Data telah tersimpan di Firebase'
                 }
               >

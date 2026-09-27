@@ -7,6 +7,8 @@ import {
   deleteDoc,
   onSnapshot,
   writeBatch,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { ClassRoom, Student, TeacherCode } from '../types';
@@ -15,6 +17,7 @@ import {
   DEFAULT_STUDENTS,
   DEFAULT_TEACHER_CODES,
 } from '../data/defaultData';
+import { recordQuotaUsage, calculateRealtimeStorageSize } from './quotaService';
 
 const STUDENTS_COL = 'students';
 const CLASSES_COL = 'classes';
@@ -25,32 +28,35 @@ const TEACHER_CODES_COL = 'teacher_codes';
  */
 export async function initializeFirestoreIfNeeded(): Promise<boolean> {
   try {
-    const studentsSnap = await getDocs(collection(db, STUDENTS_COL));
-    if (!studentsSnap.empty) {
+    const classesSnap = await getDocs(collection(db, CLASSES_COL));
+    recordQuotaUsage({ reads: classesSnap.size || 1 });
+    if (!classesSnap.empty) {
       return false; // already seeded
     }
 
     const batch = writeBatch(db);
 
-    // Seed classes
+    // Seed default classes
     for (const c of DEFAULT_CLASSES) {
       const ref = doc(db, CLASSES_COL, c.id);
       batch.set(ref, c);
     }
 
-    // Seed students
-    for (const s of DEFAULT_STUDENTS) {
-      const ref = doc(db, STUDENTS_COL, s.id);
-      batch.set(ref, s);
-    }
-
-    // Seed teacher codes
+    // Seed default teacher login codes
     for (const tc of DEFAULT_TEACHER_CODES) {
       const ref = doc(db, TEACHER_CODES_COL, tc.id);
       batch.set(ref, tc);
     }
 
     await batch.commit();
+    recordQuotaUsage({
+      writes: DEFAULT_CLASSES.length + DEFAULT_TEACHER_CODES.length,
+      storageBytes: calculateRealtimeStorageSize(
+        0,
+        DEFAULT_CLASSES.length,
+        DEFAULT_TEACHER_CODES.length
+      ),
+    });
     return true;
   } catch (error) {
     console.warn('Firestore initial seeding fallback or offline:', error);
@@ -71,8 +77,13 @@ export function listenToStudents(
       (snapshot) => {
         const list: Student[] = [];
         snapshot.forEach((docSnap) => {
-          list.push(docSnap.data() as Student);
+          const data = docSnap.data() as Student;
+          list.push({
+            ...data,
+            id: data.id || docSnap.id,
+          });
         });
+        recordQuotaUsage({ reads: snapshot.docChanges().length || snapshot.size });
         onUpdate(list);
       },
       (error) => {
@@ -101,6 +112,7 @@ export function listenToClasses(
         snapshot.forEach((docSnap) => {
           list.push(docSnap.data() as ClassRoom);
         });
+        recordQuotaUsage({ reads: snapshot.docChanges().length || snapshot.size });
         onUpdate(list);
       },
       (error) => {
@@ -129,6 +141,7 @@ export function listenToTeacherCodes(
         snapshot.forEach((docSnap) => {
           list.push(docSnap.data() as TeacherCode);
         });
+        recordQuotaUsage({ reads: snapshot.docChanges().length || snapshot.size });
         onUpdate(list);
       },
       (error) => {
@@ -159,6 +172,7 @@ export async function updateStudentScoreInDb(
     updatePayload.notes = notes;
   }
   await updateDoc(studentRef, updatePayload);
+  recordQuotaUsage({ writes: 1 });
 }
 
 /**
@@ -379,6 +393,7 @@ export async function saveStudentInDb(student: Student) {
   if (student.id && student.id !== targetDocId) {
     try {
       await deleteDoc(doc(db, STUDENTS_COL, student.id));
+      recordQuotaUsage({ deletes: 1 });
     } catch (_) {}
   }
 
@@ -390,14 +405,104 @@ export async function saveStudentInDb(student: Student) {
 
   const ref = doc(db, STUDENTS_COL, targetDocId);
   await setDoc(ref, cleanObject(standardizedStudent), { merge: true });
+  recordQuotaUsage({ writes: 1 });
 }
 
 /**
- * Delete student from Firestore
+ * Delete student from Firestore immediately
  */
 export async function deleteStudentInDb(studentId: string) {
-  const ref = doc(db, STUDENTS_COL, studentId);
-  await deleteDoc(ref);
+  if (!studentId) return;
+
+  const targetDocIds = new Set<string>();
+  targetDocIds.add(studentId);
+  const clean = studentId.replace(/^std-/, '').replace(/[^a-zA-Z0-9]/g, '');
+  if (clean) {
+    targetDocIds.add(`std-${clean}`);
+    targetDocIds.add(clean);
+  }
+
+  // Delete all direct candidate doc IDs
+  for (const docId of targetDocIds) {
+    try {
+      await deleteDoc(doc(db, STUDENTS_COL, docId));
+    } catch (_) {}
+  }
+
+  // Query and delete any document with matching NISN
+  try {
+    const q1 = query(collection(db, STUDENTS_COL), where('nisn', '==', clean || studentId));
+    const snap1 = await getDocs(q1);
+    if (!snap1.empty) {
+      const b = writeBatch(db);
+      snap1.docs.forEach((d) => b.delete(d.ref));
+      await b.commit();
+    }
+  } catch (_) {}
+
+  recordQuotaUsage({ deletes: 1 });
+}
+
+/**
+ * Delete multiple students in batch immediately from Firestore
+ */
+export async function batchDeleteStudentsInDb(studentIds: string[]): Promise<number> {
+  if (!studentIds || studentIds.length === 0) return 0;
+  
+  const directDocIds = new Set<string>();
+  const cleanNisns = new Set<string>();
+
+  for (const rawId of studentIds) {
+    if (rawId) {
+      directDocIds.add(rawId);
+      const clean = rawId.replace(/^std-/, '').replace(/[^a-zA-Z0-9]/g, '');
+      if (clean) {
+        directDocIds.add(`std-${clean}`);
+        directDocIds.add(clean);
+        cleanNisns.add(clean);
+      }
+    }
+  }
+
+  const docIdArray = Array.from(directDocIds);
+  const chunkSize = 400;
+
+  for (let i = 0; i < docIdArray.length; i += chunkSize) {
+    const chunk = docIdArray.slice(i, i + chunkSize);
+    const batch = writeBatch(db);
+    for (const id of chunk) {
+      batch.delete(doc(db, STUDENTS_COL, id));
+    }
+    await batch.commit();
+  }
+
+  // Also query if any remaining documents match the NISNs
+  try {
+    const allSnap = await getDocs(collection(db, STUDENTS_COL));
+    if (!allSnap.empty) {
+      const extraToDelete: any[] = [];
+      allSnap.forEach((d) => {
+        const data = d.data() as Student;
+        const sNisn = (data.nisn || '').trim();
+        const sClean = sNisn.replace(/[^a-zA-Z0-9]/g, '');
+        if (directDocIds.has(d.id) || cleanNisns.has(sNisn) || cleanNisns.has(sClean)) {
+          extraToDelete.push(d.ref);
+        }
+      });
+
+      for (let i = 0; i < extraToDelete.length; i += chunkSize) {
+        const chunk = extraToDelete.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        chunk.forEach((r) => batch.delete(r));
+        await batch.commit();
+      }
+    }
+  } catch (err) {
+    console.warn('batchDelete extra scan:', err);
+  }
+
+  recordQuotaUsage({ deletes: studentIds.length });
+  return studentIds.length;
 }
 
 /**

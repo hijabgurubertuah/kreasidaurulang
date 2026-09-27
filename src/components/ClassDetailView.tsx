@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
   FileSpreadsheet,
@@ -114,36 +115,14 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
         </div>
 
         <div className="flex items-center space-x-1.5 shrink-0">
-          {onSaveToFirebase && (
-            <button
-              type="button"
-              onClick={onSaveToFirebase}
-              disabled={isSavingToFirebase || !hasPendingChanges}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer ${
-                hasPendingChanges
-                  ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 ring-2 ring-amber-300/80 active:scale-95'
-                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-              }`}
-              title={
-                hasPendingChanges
-                  ? `Simpan ${pendingChangesCount} perubahan nilai ke Firebase dalam 1 kali batch write.`
-                  : 'Nilai telah tersimpan di Firebase'
-              }
-            >
-              <Save className={`w-3.5 h-3.5 ${isSavingToFirebase ? 'animate-spin' : ''}`} />
-              <span className="hidden xs:inline">
-                {isSavingToFirebase
-                  ? 'Menyimpan...'
-                  : hasPendingChanges
-                  ? `Simpan (${pendingChangesCount})`
-                  : 'Tersimpan'}
-              </span>
-            </button>
-          )}
+          <div className="flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200 text-xs font-bold shadow-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="hidden xs:inline">Real-time Live</span>
+          </div>
 
           <button
             type="button"
-            onClick={() => exportClassToExcel(classroom, students)}
+            onClick={() => exportClassToExcel(classroom, classStudents)}
             className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer active:scale-95"
             title={`Unduh Excel ${classroom.name}`}
           >
@@ -152,28 +131,6 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
           </button>
         </div>
       </div>
-
-      {/* Banner Hemat Kuota Tulis Firebase */}
-      {hasPendingChanges && (
-        <div className="p-3 bg-amber-50 border border-amber-300 rounded-2xl text-amber-900 text-xs font-medium flex items-center justify-between gap-2 animate-fadeIn">
-          <div className="flex items-center space-x-2 min-w-0">
-            <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
-            <span className="truncate">
-              Terdapat <strong>{pendingChangesCount} perubahan nilai/catatan</strong> belum disimpan ke Firebase (kuota tulis harian Anda dihemat).
-            </span>
-          </div>
-          {onSaveToFirebase && (
-            <button
-              type="button"
-              onClick={onSaveToFirebase}
-              disabled={isSavingToFirebase}
-              className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs shrink-0 cursor-pointer shadow-xs active:scale-95"
-            >
-              {isSavingToFirebase ? 'Menyimpan...' : 'Simpan Sekarang'}
-            </button>
-          )}
-        </div>
-      )}
 
       {/* KPI Ringkas di HP */}
       <div className="grid grid-cols-3 gap-2">
@@ -330,9 +287,9 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
       </div>
 
       {/* Modal Edit Catatan Siswa */}
-      {editingStudentId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 animate-fadeIn">
-          <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl space-y-3">
+      {editingStudentId && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-900/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto overscroll-contain">
+          <div className="relative w-full max-w-sm bg-white rounded-3xl p-4 sm:p-5 shadow-2xl space-y-3 my-auto max-h-[88vh] sm:max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <h3 className="font-bold text-xs sm:text-sm text-slate-900">
                 Catatan Sikap Daur Ulang
@@ -340,7 +297,8 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
               <button
                 type="button"
                 onClick={() => setEditingStudentId(null)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                aria-label="Tutup"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -371,7 +329,8 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

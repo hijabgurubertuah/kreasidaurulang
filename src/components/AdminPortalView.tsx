@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Users,
   KeyRound,
@@ -43,18 +44,19 @@ import {
 } from '../services/firestoreService';
 import { TeacherBarcodeModal } from './TeacherBarcodeModal';
 import { StudentBarcodeModal } from './StudentBarcodeModal';
+import { DatabaseUsageView } from './DatabaseUsageView';
 
 interface AdminPortalViewProps {
   students: Student[];
   classes: ClassRoom[];
   teacherCodes: TeacherCode[];
   onBackToDashboard: () => void;
-  onSaveStudent: (student: Student) => void;
-  onDeleteStudent: (studentId: string) => void;
-  onBulkDeleteStudents: (studentIds: string[]) => void;
+  onSaveStudent: (student: Student) => void | Promise<void>;
+  onDeleteStudent: (studentId: string) => void | Promise<void>;
+  onBulkDeleteStudents: (studentIds: string[]) => void | Promise<void>;
   onCreateTeacherCode: (newCode: TeacherCode) => Promise<void>;
   onDeleteTeacherCode: (codeId: string) => Promise<void>;
-  onSyncCsvData: (students: Student[], classes: ClassRoom[]) => void;
+  onSyncCsvData: (students: Student[], classes: ClassRoom[]) => void | Promise<void>;
   onClearStudents: () => Promise<number>;
   onClearTeacherCodes: () => Promise<number>;
   onResetDatabase: () => Promise<void>;
@@ -63,6 +65,7 @@ interface AdminPortalViewProps {
     removedDuplicates: number;
     totalUnique: number;
   }>;
+  firebaseConnected?: boolean;
   hasPendingChanges?: boolean;
   pendingChangesCount?: number;
   onSaveToFirebase?: () => Promise<void>;
@@ -85,13 +88,14 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   onClearTeacherCodes,
   onResetDatabase,
   onDeduplicateStudents,
+  firebaseConnected = true,
   hasPendingChanges = false,
   pendingChangesCount = 0,
   onSaveToFirebase,
   isSavingToFirebase = false,
   onDiscardPendingChanges,
 }) => {
-  const [activeTab, setActiveTab] = useState<'spreadsheet' | 'students' | 'teachers' | 'cleanup'>('spreadsheet');
+  const [activeTab, setActiveTab] = useState<'spreadsheet' | 'students' | 'teachers' | 'database'>('spreadsheet');
 
   // Search & filter for students
   const [searchStudent, setSearchStudent] = useState('');
@@ -143,6 +147,18 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   // Cleanup Database State
   const [isExecutingCleanup, setIsExecutingCleanup] = useState(false);
   const [cleanupActionType, setCleanupActionType] = useState<string | null>(null);
+
+  // Deletion Confirmation Modal State (replaces window.confirm for reliable execution in iframes & mobile)
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    type: 'single' | 'bulk' | 'teacher';
+    student?: Student;
+    studentIds?: string[];
+    teacherId?: string;
+    teacherName?: string;
+    teacherCode?: string;
+  } | null>(null);
+  const [isDeletingLoading, setIsDeletingLoading] = useState(false);
 
   // Load saved spreadsheet URL from Firestore on mount
   useEffect(() => {
@@ -209,20 +225,11 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   const handleBulkDelete = () => {
     const count = selectedStudentIds.size;
     if (count === 0) return;
-
-    const isAll = count === filteredStudents.length && filteredStudents.length > 0;
-    const confirmMessage = isAll
-      ? `Hapus SEMUA (${count}) siswa yang dicentang dari daftar lokal?\n\nCATATAN HEMAT KUOTA:\nData baru dihapus di memori lokal dan BELUM disimpan/ditulis ke Firebase cloud.\nKuota tulis harian Firebase Anda tetap aman.\n\nKlik tombol "Simpan ke Firebase" setelah ini jika Anda sudah selesai dan ingin menyimpan perubahan secara permanen ke cloud. Lanjutkan?`
-      : `Hapus ${count} siswa terpilih dari daftar lokal?\n\nCATATAN HEMAT KUOTA:\nData baru dihapus di memori lokal dan BELUM disimpan/ditulis ke Firebase cloud.\nKuota tulis harian Firebase Anda tetap aman.\n\nKlik tombol "Simpan ke Firebase" setelah ini jika Anda sudah selesai dan ingin menyimpan perubahan secara permanen ke cloud. Lanjutkan?`;
-
-    if (window.confirm(confirmMessage)) {
-      const ids = Array.from(selectedStudentIds);
-      onBulkDeleteStudents(ids);
-      setSelectedStudentIds(new Set());
-      setSuccessMessage(
-        `${count} siswa telah dihapus dari daftar lokal. KUOTA AMAN: Perubahan belum disimpan ke Firebase. Klik tombol "Simpan ke Firebase" jika ingin menyimpan ke cloud.`
-      );
-    }
+    setDeleteConfirm({
+      isOpen: true,
+      type: 'bulk',
+      studentIds: Array.from(selectedStudentIds),
+    });
   };
 
   // Parsed Sheet Info (for edit link)
@@ -309,7 +316,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     setIsStudentModalOpen(true);
   };
 
-  const handleSaveStudentSubmit = (e: React.FormEvent) => {
+  const handleSaveStudentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanNisn = formNisn.trim();
     const cleanName = formName.trim();
@@ -346,16 +353,16 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     };
 
     try {
-      onSaveStudent(studentData);
+      await onSaveStudent(studentData);
       setIsStudentModalOpen(false);
       setSuccessMessage(
         existingStudentWithNisn && !editingStudent
-          ? `NISN "${cleanNisn}" sudah ada: Data siswa diperbarui di memori lokal tanpa duplikasi. Klik "Simpan ke Firebase" untuk menyimpan ke cloud.`
+          ? `NISN "${cleanNisn}" sudah ada: Data siswa diperbarui langsung di Firebase secara real-time.`
           : editingStudent
-          ? `Data siswa "${cleanName}" diperbarui di daftar lokal. Klik "Simpan ke Firebase" untuk menyimpan permanen ke cloud.`
-          : `Siswa "${cleanName}" ditambahkan ke daftar lokal. Klik "Simpan ke Firebase" untuk menyimpan permanen ke cloud.`
+          ? `Data siswa "${cleanName}" diperbarui di Firebase secara real-time.`
+          : `Siswa "${cleanName}" berhasil ditambahkan ke Firebase Firestore.`
       );
-      setTimeout(() => setSuccessMessage(''), 5000);
+      setTimeout(() => setSuccessMessage(''), 4000);
     } catch (err: any) {
       setErrorMessage(`Gagal menyimpan: ${err.message}`);
     } finally {
@@ -364,15 +371,54 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   };
 
   const handleDeleteStudentClick = (student: Student) => {
-    if (window.confirm(`Hapus siswa "${student.name}" (${student.nisn}) dari daftar lokal? (Perubahan akan disimpan saat Anda mengklik "Simpan ke Firebase").`)) {
-      onDeleteStudent(student.id);
-      setSelectedStudentIds((prev) => {
-        const next = new Set(prev);
-        next.delete(student.id);
-        return next;
-      });
-      setSuccessMessage(`Siswa "${student.name}" dihapus dari daftar lokal. Klik "Simpan ke Firebase" untuk menyimpan.`);
-      setTimeout(() => setSuccessMessage(''), 4000);
+    setDeleteConfirm({
+      isOpen: true,
+      type: 'single',
+      student,
+    });
+  };
+
+  const handleDeleteTeacherClick = (teacher: TeacherCode) => {
+    setDeleteConfirm({
+      isOpen: true,
+      type: 'teacher',
+      teacherId: teacher.id,
+      teacherName: teacher.name,
+      teacherCode: teacher.code,
+    });
+  };
+
+  const handleExecuteConfirmDelete = async () => {
+    if (!deleteConfirm) return;
+    setIsDeletingLoading(true);
+    setErrorMessage('');
+    try {
+      if (deleteConfirm.type === 'single' && deleteConfirm.student) {
+        const st = deleteConfirm.student;
+        await onDeleteStudent(st.id);
+        setSelectedStudentIds((prev) => {
+          const next = new Set(prev);
+          next.delete(st.id);
+          return next;
+        });
+        setSuccessMessage(`Siswa "${st.name}" (${st.nisn}) berhasil dihapus seketika dari Firebase Firestore.`);
+        setTimeout(() => setSuccessMessage(''), 3500);
+      } else if (deleteConfirm.type === 'bulk' && deleteConfirm.studentIds) {
+        const count = deleteConfirm.studentIds.length;
+        await onBulkDeleteStudents(deleteConfirm.studentIds);
+        setSelectedStudentIds(new Set());
+        setSuccessMessage(`${count} siswa berhasil dihapus seketika dari Firebase Firestore & seluruh perangkat!`);
+        setTimeout(() => setSuccessMessage(''), 4000);
+      } else if (deleteConfirm.type === 'teacher' && deleteConfirm.teacherId) {
+        await onDeleteTeacherCode(deleteConfirm.teacherId);
+        setSuccessMessage(`Kode login guru "${deleteConfirm.teacherCode || ''}" berhasil dihapus dari Firebase.`);
+        setTimeout(() => setSuccessMessage(''), 3500);
+      }
+    } catch (err: any) {
+      setErrorMessage(`Gagal menghapus: ${err.message}`);
+    } finally {
+      setIsDeletingLoading(false);
+      setDeleteConfirm(null);
     }
   };
 
@@ -589,41 +635,14 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
             <h2 className="text-sm sm:text-lg font-black text-slate-900 truncate leading-tight">
               Portal Admin
             </h2>
-            <p className="text-[11px] text-slate-500 truncate">
-              Centang Siswa • Simpan ke Firebase Hemat Kuota • Anti-Duplikasi
+            <p className="text-[11px] text-slate-500 truncate flex items-center space-x-1.5">
+              <span className={`w-2 h-2 rounded-full ${firebaseConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+              <span>Real-time Sync • Centang & Hapus Seketika • Database 1 GB</span>
             </p>
           </div>
         </div>
 
         <div className="flex items-center space-x-1.5 shrink-0">
-          {/* Tombol Simpan ke Firebase di Header Portal Admin */}
-          {onSaveToFirebase && (
-            <button
-              type="button"
-              onClick={onSaveToFirebase}
-              disabled={isSavingToFirebase || !hasPendingChanges}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer ${
-                hasPendingChanges
-                  ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 ring-2 ring-amber-300/90 active:scale-95'
-                  : 'bg-slate-100 text-slate-400 border border-slate-200'
-              }`}
-              title={
-                hasPendingChanges
-                  ? `Simpan ${pendingChangesCount} perubahan data siswa ke Firebase dalam 1 batch write (hemat kuota)`
-                  : 'Semua perubahan telah tersimpan di Firebase'
-              }
-            >
-              <Save className={`w-3.5 h-3.5 ${isSavingToFirebase ? 'animate-spin' : ''}`} />
-              <span className="hidden xs:inline">
-                {isSavingToFirebase
-                  ? 'Menyimpan...'
-                  : hasPendingChanges
-                  ? `Simpan (${pendingChangesCount})`
-                  : 'Tersimpan'}
-              </span>
-            </button>
-          )}
-
           <button
             type="button"
             onClick={onBackToDashboard}
@@ -769,17 +788,17 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         <button
           type="button"
           onClick={() => {
-            setActiveTab('cleanup');
+            setActiveTab('database');
             setErrorMessage('');
           }}
           className={`flex items-center justify-center space-x-1.5 py-2 px-1 rounded-xl text-xs font-bold transition-all cursor-pointer truncate ${
-            activeTab === 'cleanup'
-              ? 'bg-white text-rose-700 shadow-xs'
+            activeTab === 'database'
+              ? 'bg-white text-blue-700 shadow-xs'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <Database className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-          <span className="truncate">Bersihkan Data</span>
+          <Database className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+          <span className="truncate">Database (1 GB)</span>
         </button>
       </div>
 
@@ -900,7 +919,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
           {selectedStudentIds.size > 0 && (
             <div className="sticky top-20 z-20 p-2.5 bg-slate-900 text-white rounded-2xl shadow-xl border border-slate-700 flex items-center justify-between gap-2 animate-fadeIn">
               <div className="flex items-center space-x-2 min-w-0 pl-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-400 animate-pulse shrink-0" />
                 <span className="text-xs font-bold truncate">
                   {selectedStudentIds.size} dari {filteredStudents.length} siswa dicentang
                 </span>
@@ -917,74 +936,18 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                 <button
                   type="button"
                   onClick={handleBulkDelete}
-                  className="flex items-center space-x-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-xs active:scale-95"
+                  className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-xs active:scale-95"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>
-                    Hapus {selectedStudentIds.size === filteredStudents.length ? 'Semua' : 'Terpilih'} ({selectedStudentIds.size})
+                    Hapus {selectedStudentIds.size === filteredStudents.length ? 'Semua' : 'Terpilih'} ({selectedStudentIds.size}) Seketika
                   </span>
                 </button>
-                {hasPendingChanges && onSaveToFirebase && (
-                  <button
-                    type="button"
-                    onClick={onSaveToFirebase}
-                    disabled={isSavingToFirebase}
-                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl text-xs transition-all cursor-pointer shadow-xs active:scale-95"
-                  >
-                    <Save className={`w-3.5 h-3.5 ${isSavingToFirebase ? 'animate-spin' : ''}`} />
-                    <span>Simpan ke Firebase</span>
-                  </button>
-                )}
               </div>
             </div>
           )}
 
-          {/* Banner Kuota Hemat Khusus Tab Siswa jika ada perubahan belum disimpan */}
-          {hasPendingChanges && (
-            <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-xs animate-fadeIn">
-              <div className="flex items-start space-x-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center shrink-0 font-bold shadow-xs">
-                  <Save className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-xs font-black text-slate-900 flex items-center space-x-1.5">
-                    <span>{pendingChangesCount} Perubahan Siswa Belum Disimpan ke Firebase</span>
-                    <span className="text-[10px] bg-amber-200 text-amber-900 font-extrabold px-1.5 py-0.5 rounded-full">
-                      Hemat Kuota Free
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-amber-950 mt-0.5 leading-relaxed">
-                    Data tersimpan di memori lokal. Kuota harian Firebase Anda belum terpakai. Klik tombol <strong>"Simpan ke Firebase"</strong> setelah selesai untuk menulis 1 batch write ke cloud.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-2 self-end sm:self-center shrink-0">
-                {onDiscardPendingChanges && (
-                  <button
-                    type="button"
-                    onClick={onDiscardPendingChanges}
-                    disabled={isSavingToFirebase}
-                    className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-300 cursor-pointer"
-                  >
-                    Batal
-                  </button>
-                )}
-                {onSaveToFirebase && (
-                  <button
-                    type="button"
-                    onClick={onSaveToFirebase}
-                    disabled={isSavingToFirebase}
-                    className="flex items-center space-x-1.5 px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs shadow-md transition-all cursor-pointer ring-2 ring-amber-300 active:scale-95"
-                  >
-                    <Save className={`w-3.5 h-3.5 ${isSavingToFirebase ? 'animate-spin' : ''}`} />
-                    <span>{isSavingToFirebase ? 'Menyimpan...' : `Simpan ke Firebase (${pendingChangesCount})`}</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Toolbar Search, Centang Semua, Hapus Semua, Simpan ke Firebase & Tambah Siswa */}
+          {/* Toolbar Search, Centang Semua, Hapus Semua & Tambah Siswa */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-white p-3 rounded-2xl border border-slate-200/90 shadow-xs">
             <div className="relative flex-1">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1017,7 +980,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                 onClick={handleToggleSelectAll}
                 className={`flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 border ${
                   isAllFilteredSelected
-                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
                     : isSomeFilteredSelected
                     ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
                     : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
@@ -1040,26 +1003,12 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                   type="button"
                   onClick={handleBulkDelete}
                   className="flex items-center space-x-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shrink-0 transition-all cursor-pointer shadow-xs active:scale-95 animate-fadeIn"
-                  title="Hapus semua siswa yang dicentang dari daftar lokal"
+                  title="Hapus semua siswa yang dicentang dari Firebase Firestore seketika"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>
                     Hapus {selectedStudentIds.size === filteredStudents.length ? 'Semua' : 'Terpilih'} ({selectedStudentIds.size})
                   </span>
-                </button>
-              )}
-
-              {/* Tombol Simpan ke Firebase di Toolbar jika ada perubahan pending */}
-              {hasPendingChanges && onSaveToFirebase && (
-                <button
-                  type="button"
-                  onClick={onSaveToFirebase}
-                  disabled={isSavingToFirebase}
-                  className="flex items-center space-x-1.5 px-3.5 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl text-xs shadow-md transition-all cursor-pointer ring-2 ring-amber-300 shrink-0 active:scale-95"
-                  title={`Simpan ${pendingChangesCount} perubahan ke Firebase dalam 1 batch write`}
-                >
-                  <Save className={`w-3.5 h-3.5 ${isSavingToFirebase ? 'animate-spin' : ''}`} />
-                  <span>{isSavingToFirebase ? 'Menyimpan...' : `Simpan (${pendingChangesCount})`}</span>
                 </button>
               )}
 
@@ -1101,18 +1050,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                     className="flex items-center space-x-1 px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-black cursor-pointer shadow-xs active:scale-95"
                   >
                     <Trash2 className="w-3 h-3" />
-                    <span>Hapus ({selectedStudentIds.size})</span>
-                  </button>
-                )}
-                {hasPendingChanges && onSaveToFirebase && (
-                  <button
-                    type="button"
-                    onClick={onSaveToFirebase}
-                    disabled={isSavingToFirebase}
-                    className="flex items-center space-x-1 px-2.5 py-1 bg-amber-400 text-slate-950 font-black rounded-lg text-[11px] shadow-xs active:scale-95 cursor-pointer ring-1 ring-amber-300"
-                  >
-                    <Save className={`w-3 h-3 ${isSavingToFirebase ? 'animate-spin' : ''}`} />
-                    <span>Simpan</span>
+                    <span>Hapus ({selectedStudentIds.size}) Seketika</span>
                   </button>
                 )}
               </div>
@@ -1493,7 +1431,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                     {!isProtected && (
                       <button
                         type="button"
-                        onClick={() => onDeleteTeacherCode(tc.id)}
+                        onClick={() => handleDeleteTeacherClick(tc)}
                         className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
                         title="Hapus dari Firebase"
                       >
@@ -1508,152 +1446,38 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         </div>
       )}
 
-      {/* TAB 4: BERSIHKAN DATA SISWA & GURU DI FIREBASE */}
-      {activeTab === 'cleanup' && (
-        <div className="space-y-4 animate-fadeIn">
-          {/* Header Info */}
-          <div className="p-4 bg-slate-900 rounded-2xl text-white space-y-1">
-            <div className="inline-flex items-center space-x-1.5 bg-rose-500/20 text-rose-300 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider mb-0.5">
-              <Database className="w-3 h-3" />
-              <span>Pemeliharaan Database Firebase</span>
-            </div>
-            <h3 className="text-sm sm:text-base font-black">
-              Opsi Bersihkan Data Siswa & Guru di Firebase
-            </h3>
-            <p className="text-xs text-slate-300">
-              Gunakan opsi di bawah untuk mengosongkan data lama, membersihkan duplikat NISN, atau mereset data siswa & guru secara aman.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {/* Opsi 1: Bersihkan Data Siswa */}
-            <div className="p-4 bg-white rounded-2xl border border-slate-200/90 shadow-xs flex flex-col justify-between space-y-3">
-              <div>
-                <div className="flex items-center space-x-2 text-rose-600 font-bold text-xs uppercase tracking-wide">
-                  <Trash2 className="w-4 h-4" />
-                  <span>Bersihkan Data Siswa</span>
-                </div>
-                <h4 className="text-sm font-black text-slate-900 mt-1">
-                  Kosongkan Seluruh Siswa ({students.length} Siswa)
-                </h4>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  Menghapus seluruh rekaman siswa dari Firebase Firestore. Cocok saat Anda ingin memasukkan data siswa baru dari awal atau spreadsheet baru secara bersih.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleRunClearStudents}
-                disabled={isExecutingCleanup || students.length === 0}
-                className="w-full py-2.5 px-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-98"
-              >
-                {cleanupActionType === 'clear-students'
-                  ? 'Sedang Membersihkan...'
-                  : `Hapus Seluruh ${students.length} Siswa`}
-              </button>
-            </div>
-
-            {/* Opsi 2: Bersihkan Kode Guru Tambahan */}
-            <div className="p-4 bg-white rounded-2xl border border-slate-200/90 shadow-xs flex flex-col justify-between space-y-3">
-              <div>
-                <div className="flex items-center space-x-2 text-amber-600 font-bold text-xs uppercase tracking-wide">
-                  <KeyRound className="w-4 h-4" />
-                  <span>Bersihkan Kode Guru</span>
-                </div>
-                <h4 className="text-sm font-black text-slate-900 mt-1">
-                  Hapus Kode Guru Tambahan
-                </h4>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  Menghapus seluruh kode login guru tambahan yang dibuat sebelumnya. Akun bawaan (<span className="font-mono font-bold text-slate-800">ADMIN123</span> & <span className="font-mono font-bold text-slate-800">GURU123</span>) akan tetap dipertahankan.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleRunClearTeachers}
-                disabled={isExecutingCleanup}
-                className="w-full py-2.5 px-3 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-98"
-              >
-                {cleanupActionType === 'clear-teachers'
-                  ? 'Sedang Membersihkan...'
-                  : 'Hapus Kode Guru Tambahan'}
-              </button>
-            </div>
-
-            {/* Opsi 3: Pindai & Bersihkan Duplikat NISN */}
-            <div className="p-4 bg-white rounded-2xl border border-slate-200/90 shadow-xs flex flex-col justify-between space-y-3">
-              <div>
-                <div className="flex items-center space-x-2 text-emerald-600 font-bold text-xs uppercase tracking-wide">
-                  <Sparkles className="w-4 h-4" />
-                  <span>Deduplikasi Otomatis</span>
-                </div>
-                <h4 className="text-sm font-black text-slate-900 mt-1">
-                  Pindai & Gabungkan NISN Ganda
-                </h4>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  Memindai seluruh database Firebase untuk mencari nomor NISN ganda/kembar, menggabungkan data terbaik, dan menghapus duplikat secara otomatis.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleRunDeduplication}
-                disabled={isExecutingCleanup}
-                className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-98"
-              >
-                {cleanupActionType === 'deduplicate'
-                  ? 'Sedang Memindai...'
-                  : 'Pindai & Bersihkan Duplikat NISN'}
-              </button>
-            </div>
-
-            {/* Opsi 4: Reset ke Data Awal Modul */}
-            <div className="p-4 bg-white rounded-2xl border border-slate-200/90 shadow-xs flex flex-col justify-between space-y-3">
-              <div>
-                <div className="flex items-center space-x-2 text-slate-700 font-bold text-xs uppercase tracking-wide">
-                  <RotateCcw className="w-4 h-4" />
-                  <span>Reset Default</span>
-                </div>
-                <h4 className="text-sm font-black text-slate-900 mt-1">
-                  Kembalikan Data Bawaan Modul (24 Siswa)
-                </h4>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  Mereset seluruh data siswa (Kelas 7A, 7B, 8A, 8B) dan guru kembali ke data awal modul Kreasi Daur Ulang SMP Negeri 1 Bengkalis.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleRunResetDatabase}
-                disabled={isExecutingCleanup}
-                className="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-98"
-              >
-                {cleanupActionType === 'reset-all'
-                  ? 'Sedang Mereset...'
-                  : 'Kembalikan ke Data Default'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* TAB 4: DATABASE & GRAFIK PENGGUNAAN KUOTA (1 GB) */}
+      {activeTab === 'database' && (
+        <DatabaseUsageView
+          students={students}
+          classes={classes}
+          teacherCodes={teacherCodes}
+          firebaseConnected={firebaseConnected}
+          onClearStudents={onClearStudents}
+          onClearTeacherCodes={onClearTeacherCodes}
+          onResetDatabase={onResetDatabase}
+          onDeduplicateStudents={onDeduplicateStudents}
+        />
       )}
 
       {/* MODAL TAMBAH / EDIT SISWA */}
-      {isStudentModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 animate-fadeIn">
-          <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl space-y-3 max-h-[90vh] overflow-y-auto">
+      {isStudentModalOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-900/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto overscroll-contain">
+          <div className="relative w-full max-w-sm bg-white rounded-3xl p-4 sm:p-5 shadow-2xl space-y-3 my-auto max-h-[88vh] sm:max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div>
                 <h3 className="font-bold text-sm text-slate-900">
                   {editingStudent ? 'Edit Data & NISN Siswa' : 'Tambah Siswa Baru'}
                 </h3>
-                <p className="text-[10px] text-amber-700 font-semibold">
-                  Tersimpan di memori (klik Simpan ke Firebase untuk menyimpan ke cloud)
+                <p className="text-[10px] text-emerald-700 font-semibold">
+                  Tersimpan langsung ke Firebase Firestore secara real-time
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsStudentModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                aria-label="Tutup"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1750,7 +1574,69 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
+      )}
+
+      {/* MODAL KONFIRMASI HAPUS REAL-TIME (Tampil di Layar HP & Desktop Tanpa Terhalang Browser) */}
+      {deleteConfirm && deleteConfirm.isOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-900/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto overscroll-contain">
+          <div className="relative w-full max-w-sm bg-white rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 my-auto border border-slate-200">
+            {/* Warning Icon */}
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center mx-auto shadow-xs">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            {/* Title & Info */}
+            <div className="text-center space-y-1.5">
+              <h3 className="font-extrabold text-base text-slate-900">
+                {deleteConfirm.type === 'single'
+                  ? 'Hapus Siswa dari Firebase?'
+                  : deleteConfirm.type === 'bulk'
+                  ? `Hapus ${deleteConfirm.studentIds?.length || 0} Siswa Terpilih?`
+                  : 'Hapus Kode Login Guru?'}
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                {deleteConfirm.type === 'single' && deleteConfirm.student ? (
+                  <>
+                    Siswa <strong className="text-slate-900">"{deleteConfirm.student.name}"</strong> (NISN: <span className="font-mono font-bold text-emerald-800">{deleteConfirm.student.nisn}</span>) akan dihapus seketika dari database cloud Firebase Firestore.
+                  </>
+                ) : deleteConfirm.type === 'bulk' ? (
+                  <>
+                    Sebanyak <strong className="text-rose-600 font-bold">{deleteConfirm.studentIds?.length || 0} siswa</strong> yang dicentang akan langsung dihapus seketika dari cloud database dan tersinkronisasi ke seluruh perangkat.
+                  </>
+                ) : (
+                  <>
+                    Kode login guru <strong className="text-slate-900">"{deleteConfirm.teacherCode}"</strong> ({deleteConfirm.teacherName}) akan dihapus dari Firebase.
+                  </>
+                )}
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirm(null)}
+                disabled={isDeletingLoading}
+                className="w-full py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Batal
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExecuteConfirmDelete}
+                disabled={isDeletingLoading}
+                className="w-full py-2.5 px-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs shadow-xs transition-all cursor-pointer flex items-center justify-center space-x-1.5 active:scale-95 disabled:opacity-50"
+              >
+                <Trash2 className={`w-3.5 h-3.5 ${isDeletingLoading ? 'animate-spin' : ''}`} />
+                <span>{isDeletingLoading ? 'Menghapus...' : 'Ya, Hapus'}</span>
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal Barcode Login Guru */}
