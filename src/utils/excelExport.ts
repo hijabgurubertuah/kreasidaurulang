@@ -1,11 +1,13 @@
 import * as XLSX from 'xlsx';
 import { ClassRoom, Student } from '../types';
 
-export function getPredicate(score: number): { text: string; code: string } {
-  if (score >= 90) return { text: 'Sangat Baik (SB)', code: 'A' };
-  if (score >= 80) return { text: 'Baik (B)', code: 'B' };
-  if (score >= 70) return { text: 'Cukup (C)', code: 'C' };
-  return { text: 'Perlu Bimbingan (PB)', code: 'D' };
+export function getPredicate(score: number): { text: string; code: string; color: string } {
+  if (score >= 100) return { text: 'Sempurna', code: 'A+', color: 'gold' };
+  if (score >= 90) return { text: 'Sangat baik', code: 'A', color: 'silver' };
+  if (score >= 80) return { text: 'Baik', code: 'B', color: 'green' };
+  if (score >= 70) return { text: 'Kurang', code: 'C', color: 'yellow' };
+  if (score >= 60) return { text: 'Sangat kurang', code: 'D', color: 'purple' };
+  return { text: 'Buruk', code: 'E', color: 'red' };
 }
 
 /**

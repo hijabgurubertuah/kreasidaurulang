@@ -44,10 +44,27 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
   const [tempNotes, setTempNotes] = useState('');
   const [recentUpdatedId, setRecentUpdatedId] = useState<string | null>(null);
 
-  // Filter students for this class
+  // Filter students for this class (Sorted Alphabetically A-Z)
   const classStudents = useMemo(() => {
-    return students.filter((s) => s.classId === classroom.id);
-  }, [students, classroom.id]);
+    const classIdStr = (classroom.id || '').trim().toLowerCase();
+    const classNameStr = (classroom.name || '').replace(/^Kelas\s+/i, '').trim().toLowerCase();
+
+    return students
+      .filter((s) => {
+        if (!s) return false;
+        const sClassId = (s.classId || '').trim().toLowerCase();
+        const sClassName = (s.className || '').trim().toLowerCase();
+        const sCleanClassName = (s.className || '').replace(/^Kelas\s+/i, '').trim().toLowerCase();
+
+        return (
+          sClassId === classIdStr ||
+          sClassName === (classroom.name || '').trim().toLowerCase() ||
+          sCleanClassName === classNameStr ||
+          sClassId === classNameStr
+        );
+      })
+      .sort((a, b) => (a.name || '').trim().localeCompare((b.name || '').trim(), 'id', { sensitivity: 'base' }));
+  }, [students, classroom]);
 
   // Filter by search query
   const filteredStudents = useMemo(() => {
@@ -119,16 +136,6 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span className="hidden xs:inline">Real-time Live</span>
           </div>
-
-          <button
-            type="button"
-            onClick={() => exportClassToExcel(classroom, classStudents)}
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer active:scale-95"
-            title={`Unduh Excel ${classroom.name}`}
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-300" />
-            <span className="hidden xs:inline">Ekspor Excel</span>
-          </button>
         </div>
       </div>
 

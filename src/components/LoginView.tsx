@@ -15,9 +15,21 @@ export const LoginView: React.FC<LoginViewProps> = ({
   teacherCodes,
   onLoginSuccess,
 }) => {
-  const [inputValue, setInputValue] = useState('');
+  const [inputValue, setInputValue] = useState(() => {
+    try {
+      return localStorage.getItem('smpn1bks_saved_code') || '';
+    } catch (_) {
+      return '';
+    }
+  });
   const [errorMessage, setErrorMessage] = useState('');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+
+  const saveLastCode = (code: string) => {
+    try {
+      localStorage.setItem('smpn1bks_saved_code', code);
+    } catch (_) {}
+  };
 
   const attemptLogin = (rawValue: string) => {
     setErrorMessage('');
@@ -32,6 +44,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
     // 1. Kode Khusus Masuk Portal Admin (admin123)
     if (cleanLower === 'admin123') {
+      saveLastCode(clean);
       onLoginSuccess({
         role: 'admin',
         identifier: 'ADMIN123',
@@ -42,6 +55,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
     // 2. Kode Khusus Masuk Sebagai Guru (guru123)
     if (cleanLower === 'guru123' || cleanLower === 'guru2026') {
+      saveLastCode(clean);
       onLoginSuccess({
         role: 'teacher',
         identifier: 'GURU123',
@@ -52,6 +66,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
     // 3. Kode Khusus Uji Coba Halaman Siswa (siswa123)
     if (cleanLower === 'siswa123') {
+      saveLastCode(clean);
       const demoStudent = students[0] || {
         id: 'std-trial-01',
         nisn: 'SISWA123',
@@ -76,6 +91,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
       (s) => s.nisn.toLowerCase() === cleanLower
     );
     if (foundStudent) {
+      saveLastCode(clean);
       onLoginSuccess({
         role: 'student',
         identifier: foundStudent.nisn,
@@ -91,6 +107,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
       (tc) => tc.code.toUpperCase() === cleanUpper
     );
     if (foundTeacher) {
+      saveLastCode(clean);
       onLoginSuccess({
         role: foundTeacher.role,
         identifier: foundTeacher.code,

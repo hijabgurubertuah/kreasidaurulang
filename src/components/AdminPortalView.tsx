@@ -30,10 +30,12 @@ import {
   CheckSquare,
   Square,
   MinusSquare,
+  Award,
 } from 'lucide-react';
 import { ClassRoom, Student, TeacherCode } from '../types';
 import { parseStudentCsv, ParsedCsvResult } from '../utils/csvParser';
 import { downloadSampleCsvTemplate } from '../utils/excelExport';
+import { getScoreColorScheme } from './StudentPortalView';
 import {
   parseGoogleSheetsUrl,
   fetchGoogleSheetCsv,
@@ -97,7 +99,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   isSavingToFirebase = false,
   onDiscardPendingChanges,
 }) => {
-  const [activeTab, setActiveTab] = useState<'spreadsheet' | 'students' | 'teachers' | 'database'>('spreadsheet');
+  const [activeTab, setActiveTab] = useState<'spreadsheet' | 'students' | 'scores' | 'teachers' | 'database'>('spreadsheet');
 
   // Search & filter for students
   const [searchStudent, setSearchStudent] = useState('');
@@ -171,15 +173,28 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     });
   }, []);
 
-  // Filtered Students
+  // Filtered Students (Sorted by Class Name, then Alphabetically by Student Name A-Z)
   const filteredStudents = useMemo(() => {
-    return students.filter((s) => {
-      const matchSearch =
-        s.name.toLowerCase().includes(searchStudent.toLowerCase()) ||
-        s.nisn.includes(searchStudent);
-      const matchClass = selectedClassFilter ? s.className === selectedClassFilter : true;
-      return matchSearch && matchClass;
-    });
+    return students
+      .filter((s) => {
+        const matchSearch =
+          s.name.toLowerCase().includes(searchStudent.toLowerCase()) ||
+          s.nisn.includes(searchStudent);
+        const matchClass = selectedClassFilter ? s.className === selectedClassFilter : true;
+        return matchSearch && matchClass;
+      })
+      .sort((a, b) => {
+        // Sort primary by class name (e.g. Kelas 7A, Kelas 7B)
+        const classA = (a.className || '').trim();
+        const classB = (b.className || '').trim();
+        const classComp = classA.localeCompare(classB, 'id', { numeric: true, sensitivity: 'base' });
+        if (classComp !== 0) return classComp;
+
+        // Sort secondary by student name alphabetically A-Z
+        const nameA = (a.name || '').trim();
+        const nameB = (b.name || '').trim();
+        return nameA.localeCompare(nameB, 'id', { sensitivity: 'base' });
+      });
   }, [students, searchStudent, selectedClassFilter]);
 
   // Checkbox Selection Helpers
@@ -546,7 +561,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   const handleRunClearTeachers = async () => {
     if (
       !window.confirm(
-        'PERINGATAN: Hapus semua kode login guru tambahan dari Firebase Firestore? (Akun ADMIN123 dan GURU123 akan tetap dipertahankan).'
+        'PERINGATAN: Hapus semua kode login guru dari Firebase Firestore? (Hanya akun ADMIN123 yang akan dipertahankan).'
       )
     ) {
       return;
@@ -740,8 +755,8 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         </div>
       )}
 
-      {/* Tab Navigation - 4 Kolom Proporsional di Layar HP */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 bg-slate-200/80 p-1 rounded-2xl gap-1">
+      {/* Tab Navigation - 5 Kolom Proporsional */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 bg-slate-200/80 p-1 rounded-2xl gap-1">
         <button
           type="button"
           onClick={() => {
@@ -772,6 +787,22 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         >
           <GraduationCap className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
           <span className="truncate">Siswa ({students.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('scores');
+            setErrorMessage('');
+          }}
+          className={`flex items-center justify-center space-x-1.5 py-2 px-1 rounded-xl text-xs font-bold transition-all cursor-pointer truncate ${
+            activeTab === 'scores'
+              ? 'bg-white text-emerald-800 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Award className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          <span className="truncate">Nilai Siswa</span>
         </button>
 
         <button
@@ -1262,6 +1293,140 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         </div>
       )}
 
+      {/* TAB: REKAP PENILAIAN SISWA PER KELAS */}
+      {activeTab === 'scores' && (
+        <div className="space-y-4">
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-emerald-800 via-teal-800 to-slate-900 rounded-2xl p-4 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="inline-flex items-center space-x-1.5 bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider mb-1">
+                <Award className="w-3.5 h-3.5 text-amber-300" />
+                <span>Rekap Penilaian Sikap Real-time</span>
+              </div>
+              <h3 className="text-sm sm:text-base font-black leading-tight">
+                Penilaian Siswa Per Kelas (Kokurikuler Daur Ulang)
+              </h3>
+              <p className="text-xs text-slate-200 mt-1">
+                Melihat nama, nilai sikap, predikat warna, serta catatan perkembangan seluruh siswa secara real-time.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => downloadSampleCsvTemplate()}
+                className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Unduh Format CSV
+              </button>
+            </div>
+          </div>
+
+          {/* Controls Bar */}
+          <div className="p-3 bg-white border border-slate-200/90 rounded-2xl shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+              {/* Filter Kelas */}
+              <select
+                value={selectedClassFilter}
+                onChange={(e) => setSelectedClassFilter(e.target.value)}
+                className="w-full sm:w-auto px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+              >
+                <option value="">Semua Kelas ({classes.length} Kelas)</option>
+                {classes.map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* Legend Indikator Warna Nilai */}
+              <div className="hidden lg:flex items-center space-x-1 text-[10px] font-bold overflow-x-auto py-1">
+                <span className="px-2 py-0.5 rounded bg-amber-400 text-amber-950 border border-amber-300">100 Emas</span>
+                <span className="px-2 py-0.5 rounded bg-slate-300 text-slate-900 border border-slate-400">90 Perak</span>
+                <span className="px-2 py-0.5 rounded bg-emerald-600 text-white">80 Hijau</span>
+                <span className="px-2 py-0.5 rounded bg-yellow-400 text-yellow-950">70 Kuning</span>
+                <span className="px-2 py-0.5 rounded bg-amber-900 text-amber-50">60 Cokelat</span>
+                <span className="px-2 py-0.5 rounded bg-rose-600 text-white">≤50 Merah</span>
+              </div>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative w-full sm:w-64">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchStudent}
+                onChange={(e) => setSearchStudent(e.target.value)}
+                placeholder="Cari nama atau NISN..."
+                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+          </div>
+
+          {/* Grid Rekap Nilai Siswa Per Kelas (Cukup Nama, NISN, Nilai, & Catatan Tambahan) */}
+          <div className="space-y-4">
+            {filteredStudents.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {filteredStudents.map((st, idx) => {
+                  const style = getScoreColorScheme(st.score);
+                  return (
+                    <div
+                      key={st.id}
+                      className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 flex flex-col justify-between space-y-2.5 hover:shadow-md transition-all"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 inline-block mb-1">
+                            {st.className}
+                          </span>
+                          <h4 className="font-bold text-sm text-slate-900 truncate leading-snug">
+                            {idx + 1}. {st.name}
+                          </h4>
+                          <div className="text-[11px] font-mono text-slate-500 mt-0.5">
+                            NISN: <strong>{st.nisn}</strong>
+                          </div>
+                        </div>
+
+                        {/* Kotak Nilai Diwarnai Sesuai Nilainya */}
+                        <div className={`px-3.5 py-2 rounded-2xl text-center border shrink-0 min-w-[80px] ${style.card}`}>
+                          <div className="text-2xl font-black leading-none tracking-tight">
+                            {st.score}
+                          </div>
+                          <div className="text-[9px] font-extrabold uppercase mt-1 tracking-wider opacity-90 truncate">
+                            {style.predicate}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Catatan Tambahan */}
+                      <div className="pt-2 border-t border-slate-100 text-xs">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
+                          Catatan Tambahan:
+                        </span>
+                        {st.notes ? (
+                          <div className="italic text-[11px] text-slate-700 font-medium leading-relaxed bg-slate-50 p-2 rounded-xl border border-slate-100">
+                            "{st.notes}"
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-slate-400 italic">
+                            Tidak ada catatan tambahan.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 space-y-2">
+                <Award className="w-8 h-8 mx-auto text-slate-300" />
+                <p className="text-xs font-semibold">Tidak ada data penilaian siswa ditemukan.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* TAB 3: PENGATURAN KODE LOGIN GURU & BARCODE */}
       {activeTab === 'teachers' && (
         <div className="space-y-4">
@@ -1389,7 +1554,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
 
             {teacherCodes.map((tc) => {
               const isCopied = copiedCodeId === tc.id;
-              const isProtected = tc.code === 'ADMIN123' || tc.code === 'GURU123';
+              const isProtected = tc.code.trim().toUpperCase() === 'ADMIN123';
 
               return (
                 <div key={tc.id} className="p-3 flex items-center justify-between gap-2 hover:bg-slate-50/60 transition-colors">

@@ -137,9 +137,15 @@ export function listenToTeacherCodes(
     return onSnapshot(
       collection(db, TEACHER_CODES_COL),
       (snapshot) => {
+        const seenCodes = new Set<string>();
         const list: TeacherCode[] = [];
         snapshot.forEach((docSnap) => {
-          list.push(docSnap.data() as TeacherCode);
+          const data = docSnap.data() as TeacherCode;
+          const key = (data.code || '').trim().toUpperCase();
+          if (key && !seenCodes.has(key)) {
+            seenCodes.add(key);
+            list.push({ ...data, id: data.id || docSnap.id });
+          }
         });
         recordQuotaUsage({ reads: snapshot.docChanges().length || snapshot.size });
         onUpdate(list);
@@ -790,7 +796,7 @@ export async function clearAllTeacherCodesInDb(): Promise<number> {
   const toDelete = snap.docs.filter((d) => {
     const data = d.data() as TeacherCode;
     const code = (data.code || '').toUpperCase();
-    return code !== 'ADMIN123' && code !== 'GURU123';
+    return code !== 'ADMIN123';
   });
 
   if (toDelete.length === 0) return 0;

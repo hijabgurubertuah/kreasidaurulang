@@ -588,10 +588,10 @@ export const DatabaseUsageView: React.FC<DatabaseUsageViewProps> = ({
             <div>
               <div className="text-xs font-bold text-slate-900 flex items-center space-x-1.5">
                 <Trash2 className="w-3.5 h-3.5 text-slate-600" />
-                <span>Bersihkan Kode Guru Tambahan</span>
+                <span>Bersihkan Kode Guru</span>
               </div>
               <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                Menghapus kode login guru tambahan dan tetap mempertahankan akun ADMIN123 serta GURU123.
+                Menghapus kode login guru dan hanya mempertahankan akun utama ADMIN123.
               </p>
             </div>
             <button

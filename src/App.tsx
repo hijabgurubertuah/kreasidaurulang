@@ -39,19 +39,58 @@ import {
 import { exportAllClassesToExcel } from './utils/excelExport';
 import { CheckCircle2, X } from 'lucide-react';
 
+const SESSION_KEY = 'smpn1bks_session_user';
+
 export default function App() {
   const [classes, setClasses] = useState<ClassRoom[]>(DEFAULT_CLASSES);
   const [students, setStudents] = useState<Student[]>(DEFAULT_STUDENTS);
   const [teacherCodes, setTeacherCodes] = useState<TeacherCode[]>(DEFAULT_TEACHER_CODES);
 
-  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
-  const [activePage, setActivePage] = useState<ActivePage>('login');
+  // Restore login session from device storage if available
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(() => {
+    try {
+      const saved = localStorage.getItem(SESSION_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn('Failed to parse saved session:', e);
+    }
+    return null;
+  });
+
+  const [activePage, setActivePage] = useState<ActivePage>(() => {
+    try {
+      const saved = localStorage.getItem(SESSION_KEY);
+      if (saved) {
+        const u: CurrentUser = JSON.parse(saved);
+        if (u.role === 'student') return 'student-view';
+        if (u.role === 'admin') return 'admin-portal';
+        return 'dashboard';
+      }
+    } catch (_) {}
+    return 'login';
+  });
+
   const [selectedClass, setSelectedClass] = useState<ClassRoom | null>(null);
 
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [adminModalTab, setAdminModalTab] = useState<'csv' | 'codes'>('csv');
   const [firebaseConnected, setFirebaseConnected] = useState(false);
   const [saveSuccessNotification, setSaveSuccessNotification] = useState<string | null>(null);
+
+  // Sync currentUser changes to localStorage
+  useEffect(() => {
+    if (currentUser) {
+      try {
+        localStorage.setItem(SESSION_KEY, JSON.stringify(currentUser));
+      } catch (e) {
+        console.warn('Failed to save session to localStorage:', e);
+      }
+    } else {
+      try {
+        localStorage.removeItem(SESSION_KEY);
+      } catch (_) {}
+    }
+  }, [currentUser]);
 
   // Initialize and listen to Firestore in real-time
   useEffect(() => {
@@ -257,6 +296,10 @@ export default function App() {
 
   const handleLoginSuccess = (user: CurrentUser) => {
     setCurrentUser(user);
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+    } catch (_) {}
+
     if (user.role === 'student') {
       setActivePage('student-view');
     } else if (user.role === 'admin') {
@@ -270,6 +313,9 @@ export default function App() {
     setCurrentUser(null);
     setSelectedClass(null);
     setActivePage('login');
+    try {
+      localStorage.removeItem(SESSION_KEY);
+    } catch (_) {}
   };
 
   const handleOpenAdminModal = (tab: 'csv' | 'codes' = 'csv') => {
@@ -279,8 +325,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-emerald-200 selection:text-emerald-900">
-      {/* Top Navigation - Hanya tampil setelah login */}
-      {activePage !== 'login' && (
+      {/* Top Navigation - Hanya tampil setelah login (kecuali di halaman siswa) */}
+      {activePage !== 'login' && activePage !== 'student-view' && (
         <Navbar
           currentUser={currentUser}
           activePage={activePage}
@@ -349,6 +395,8 @@ export default function App() {
               students={students}
               onSelectClass={handleSelectClass}
               onOpenAdminModal={handleOpenAdminModal}
+              onUpdateScore={handleUpdateScore}
+              onUpdateNotes={handleUpdateNotes}
             />
           </div>
         )}
@@ -392,15 +440,11 @@ export default function App() {
         onDeleteTeacherCode={handleDeleteTeacherCode}
       />
 
-      {/* Footer hanya tampil ketika sudah login */}
-      {activePage !== 'login' && (
+      {/* Footer hanya tampil ketika sudah login (kecuali di halaman siswa) */}
+      {activePage !== 'login' && activePage !== 'student-view' && (
         <footer className="bg-slate-900 text-slate-400 py-6 border-t border-slate-800 text-center text-xs">
           <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center space-x-2">
-              <span className="font-bold text-slate-300">
-                E-Penilaian Kokurikuler: Kreasi Daur Ulang
-              </span>
-              <span>•</span>
               <span className="italic">By. TIM MODUL KREASI DAUR ULANG</span>
             </div>
             <div className="text-slate-500">
