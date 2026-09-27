@@ -35,7 +35,7 @@ const SCORE_QUOTES: Record<number, string[]> = {
   ],
 };
 
-const getQuoteForScore = (score: number, seedStr: string) => {
+export const getQuoteForScore = (score: number, seedStr: string) => {
   let categoryKey = 50;
   if (score >= 100) categoryKey = 100;
   else if (score >= 90) categoryKey = 90;

@@ -6,6 +6,7 @@ export interface Student {
   className: string;
   score: number; // 0 - 100, step 10, default 80
   meetingScores?: (number | null)[]; // Scores for up to 20 meetings
+  meetingNotes?: (string | null)[]; // Notes for up to 20 meetings
   projectTitle?: string; // e.g. "Kreasi Pot Botol Plastik Hidroponik"
   notes?: string;
   aspects?: {
