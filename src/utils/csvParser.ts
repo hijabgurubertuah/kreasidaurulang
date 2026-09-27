@@ -1,0 +1,168 @@
+import { Student, ClassRoom } from '../types';
+
+export interface ParsedCsvResult {
+  students: Student[];
+  classes: ClassRoom[];
+  errors: string[];
+  totalRows: number;
+}
+
+export function parseStudentCsv(csvText: string): ParsedCsvResult {
+  const lines = csvText
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  if (lines.length < 2) {
+    return {
+      students: [],
+      classes: [],
+      errors: ['File CSV kosong atau tidak memiliki baris data setelah header.'],
+      totalRows: 0,
+    };
+  }
+
+  // Detect delimiter: comma or semicolon
+  const firstLine = lines[0];
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const semicolonCount = (firstLine.match(/;/g) || []).length;
+  const delimiter = semicolonCount > commaCount ? ';' : ',';
+
+  // Helper to split row respecting quotes
+  const splitRow = (rowText: string): string[] => {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < rowText.length; i++) {
+      const char = rowText[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === delimiter && !inQuotes) {
+        result.push(current.trim().replace(/^"|"$/g, ''));
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim().replace(/^"|"$/g, ''));
+    return result;
+  };
+
+  const headers = splitRow(lines[0]).map((h) =>
+    h.toLowerCase().replace(/[^a-z0-9_]/g, '')
+  );
+
+  const nisnIdx = headers.findIndex(
+    (h) =>
+      h.includes('nisn') ||
+      h === 'nis' ||
+      h.includes('no_induk') ||
+      h.includes('nomorinduk') ||
+      h.includes('noinduk') ||
+      h.includes('kode') ||
+      h.includes('id')
+  );
+  const namaIdx = headers.findIndex(
+    (h) =>
+      h.includes('nama') ||
+      h.includes('siswa') ||
+      h.includes('student') ||
+      h.includes('name')
+  );
+  const kelasIdx = headers.findIndex(
+    (h) =>
+      h.includes('kelas') ||
+      h.includes('class') ||
+      h.includes('rombel') ||
+      h.includes('tingkat') ||
+      h.includes('grade')
+  );
+  const nilaiIdx = headers.findIndex((h) => h.includes('nilai') || h.includes('sikap') || h.includes('score'));
+  const proyekIdx = headers.findIndex((h) => h.includes('judul') || h.includes('kreasi') || h.includes('proyek') || h.includes('project'));
+  const catatanIdx = headers.findIndex((h) => h.includes('catatan') || h.includes('notes') || h.includes('keterangan'));
+
+  if (nisnIdx === -1 || namaIdx === -1) {
+    return {
+      students: [],
+      classes: [],
+      errors: [
+        'Format header CSV harus minimal memiliki kolom "nisn" dan "nama" (dan disarankan "kelas", "nilai_sikap").',
+      ],
+      totalRows: lines.length - 1,
+    };
+  }
+
+  const students: Student[] = [];
+  const classMap = new Map<string, ClassRoom>();
+  const errors: string[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    const cells = splitRow(line);
+
+    const nisn = cells[nisnIdx]?.trim() || '';
+    const name = cells[namaIdx]?.trim() || '';
+    const rawKelas = (kelasIdx !== -1 ? cells[kelasIdx] : '')?.trim() || 'Kelas 7A';
+    const rawNilai = (nilaiIdx !== -1 ? cells[nilaiIdx] : '')?.trim() || '80';
+    const projectTitle = (proyekIdx !== -1 ? cells[proyekIdx] : '')?.trim() || 'Kreasi Daur Ulang Mandiri';
+    const notes = (catatanIdx !== -1 ? cells[catatanIdx] : '')?.trim() || '';
+
+    if (!nisn && !name) continue;
+
+    if (!nisn) {
+      errors.push(`Baris ${i + 1}: NISN kosong untuk siswa "${name}"`);
+      continue;
+    }
+    if (!name) {
+      errors.push(`Baris ${i + 1}: Nama kosong untuk NISN "${nisn}"`);
+      continue;
+    }
+
+    // Validate score (0-100, default 80, step 10)
+    let score = parseInt(rawNilai, 10);
+    if (isNaN(score)) {
+      score = 80;
+    } else {
+      score = Math.max(0, Math.min(100, Math.round(score / 10) * 10));
+    }
+
+    // Standardize class ID
+    const sanitizedClassName = rawKelas.startsWith('Kelas')
+      ? rawKelas
+      : `Kelas ${rawKelas}`;
+    const classId = `class-${sanitizedClassName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+
+    if (!classMap.has(classId)) {
+      // detect grade if possible
+      const gradeMatch = sanitizedClassName.match(/\d+/);
+      const grade = gradeMatch ? gradeMatch[0] : '7';
+      classMap.set(classId, {
+        id: classId,
+        name: sanitizedClassName,
+        grade,
+      });
+    }
+
+    const studentId = `std-${nisn.replace(/[^a-zA-Z0-9]/g, '') || `row-${i}`}`;
+
+    students.push({
+      id: studentId,
+      nisn,
+      name,
+      classId,
+      className: sanitizedClassName,
+      score,
+      projectTitle,
+      notes,
+      lastUpdated: new Date().toISOString(),
+    });
+  }
+
+  return {
+    students,
+    classes: Array.from(classMap.values()),
+    errors,
+    totalRows: lines.length - 1,
+  };
+}

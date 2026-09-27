@@ -1,0 +1,6 @@
+{
+  "name": "E-Penilaian Kreasi Daur Ulang",
+  "description": "Aplikasi Penilaian Sikap Kokurikuler Kreasi Daur Ulang dengan Integrasi Firebase, Portal Guru, Akses Siswa NISN, dan Ekspor Excel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
