@@ -35,6 +35,8 @@ interface DatabaseUsageViewProps {
     mergedCount: number;
     removedDuplicates: number;
     totalUnique: number;
+    removedClassDuplicates?: number;
+    removedEmptyClasses?: number;
   }>;
 }
 
@@ -159,12 +161,15 @@ export const DatabaseUsageView: React.FC<DatabaseUsageViewProps> = ({
     setErrorMsg('');
     try {
       const res = await onDeduplicateStudents();
-      if (res.removedDuplicates > 0) {
-        setSuccessMsg(
-          `Deduplikasi sukses: ${res.removedDuplicates} data duplikat dibersihkan. ${res.totalUnique} siswa aktif sekarang bersih dan unik.`
-        );
+      const details: string[] = [];
+      if (res.removedDuplicates > 0) details.push(`${res.removedDuplicates} NISN ganda dibersihkan`);
+      if (res.removedClassDuplicates && res.removedClassDuplicates > 0) details.push(`${res.removedClassDuplicates} kelas ganda digabung`);
+      if (res.removedEmptyClasses && res.removedEmptyClasses > 0) details.push(`${res.removedEmptyClasses} kelas kosong dihapus`);
+
+      if (details.length > 0) {
+        setSuccessMsg(`Pembersihan sukses: ${details.join(', ')}. Database sekarang rapi!`);
       } else {
-        setSuccessMsg(`Database bersih: Tidak ada duplikasi NISN (${res.totalUnique} siswa unik).`);
+        setSuccessMsg(`Database bersih: Tidak ada NISN/Kelas ganda atau kelas kosong.`);
       }
     } catch (err: any) {
       setErrorMsg(`Gagal deduplikasi: ${err.message}`);
@@ -532,7 +537,7 @@ export const DatabaseUsageView: React.FC<DatabaseUsageViewProps> = ({
               disabled={isActionRunning}
               className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs disabled:opacity-50"
             >
-              {isActionRunning && actionType === 'deduplicate' ? 'Memindai...' : 'Jalankan Deduplikasi NISN'}
+              {isActionRunning && actionType === 'deduplicate' ? 'Memindai & Bersihkan...' : 'Bersihkan NISN & Kelas Ganda/Kosong'}
             </button>
           </div>
 

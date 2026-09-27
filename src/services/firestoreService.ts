@@ -621,16 +621,53 @@ export async function clearEmptyClassesInDb(activeClassNames: string[]): Promise
 }
 
 /**
+ * Scan and clean up both duplicate classes and empty classes with 0 students in Firestore
+ */
+export async function cleanupEmptyAndDuplicateClassesInDb(): Promise<{
+  removedClassDuplicates: number;
+  removedEmptyClasses: number;
+}> {
+  let removedClassDuplicates = 0;
+  let removedEmptyClasses = 0;
+  try {
+    const res = await deduplicateClassesInDb();
+    removedClassDuplicates = res.removedClassDuplicates;
+
+    // Get active class names from existing students
+    const snap = await getDocs(collection(db, STUDENTS_COL));
+    const activeClassNames = new Set<string>();
+    snap.forEach((d) => {
+      const st = d.data() as Student;
+      if (st.className) activeClassNames.add(st.className);
+    });
+
+    removedEmptyClasses = await clearEmptyClassesInDb(Array.from(activeClassNames));
+  } catch (err) {
+    console.warn('cleanupEmptyAndDuplicateClassesInDb failed:', err);
+  }
+  return { removedClassDuplicates, removedEmptyClasses };
+}
+
+/**
  * Scan all student documents in Firestore and merge any duplicate NISNs
  */
 export async function deduplicateStudentsInDb(): Promise<{
   mergedCount: number;
   removedDuplicates: number;
   totalUnique: number;
+  removedClassDuplicates: number;
+  removedEmptyClasses: number;
 }> {
   const snap = await getDocs(collection(db, STUDENTS_COL));
   if (snap.empty) {
-    return { mergedCount: 0, removedDuplicates: 0, totalUnique: 0 };
+    const classRes = await cleanupEmptyAndDuplicateClassesInDb();
+    return {
+      mergedCount: 0,
+      removedDuplicates: 0,
+      totalUnique: 0,
+      removedClassDuplicates: classRes.removedClassDuplicates,
+      removedEmptyClasses: classRes.removedEmptyClasses,
+    };
   }
 
   // Group docs by lowercase trimmed NISN
@@ -645,10 +682,13 @@ export async function deduplicateStudentsInDb(): Promise<{
   });
 
   // Also clean up any duplicate classes or empty classes with 0 students
+  let removedClassDuplicates = 0;
+  let removedEmptyClasses = 0;
   try {
-    await deduplicateClassesInDb();
+    const resClass = await deduplicateClassesInDb();
+    removedClassDuplicates = resClass.removedClassDuplicates;
     const activeClassNames = Array.from(groups.values()).map((list) => list[0].data.className).filter(Boolean);
-    await clearEmptyClassesInDb(activeClassNames);
+    removedEmptyClasses = await clearEmptyClassesInDb(activeClassNames);
   } catch (_) {}
 
   let mergedCount = 0;
@@ -718,6 +758,8 @@ export async function deduplicateStudentsInDb(): Promise<{
     mergedCount,
     removedDuplicates,
     totalUnique: groups.size,
+    removedClassDuplicates,
+    removedEmptyClasses,
   };
 }
 

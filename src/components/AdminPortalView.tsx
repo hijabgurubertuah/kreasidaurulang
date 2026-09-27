@@ -64,6 +64,8 @@ interface AdminPortalViewProps {
     mergedCount: number;
     removedDuplicates: number;
     totalUnique: number;
+    removedClassDuplicates?: number;
+    removedEmptyClasses?: number;
   }>;
   firebaseConnected?: boolean;
   hasPendingChanges?: boolean;
@@ -569,15 +571,18 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     setErrorMessage('');
     try {
       const res = await onDeduplicateStudents();
-      if (res.removedDuplicates > 0) {
-        setSuccessMessage(
-          `Deduplikasi berhasil: ${res.removedDuplicates} data duplikat dihapus, ${res.totalUnique} siswa aktif sekarang bersih dan unik.`
-        );
+      const details: string[] = [];
+      if (res.removedDuplicates > 0) details.push(`${res.removedDuplicates} NISN ganda dibersihkan`);
+      if (res.removedClassDuplicates && res.removedClassDuplicates > 0) details.push(`${res.removedClassDuplicates} kelas ganda digabung`);
+      if (res.removedEmptyClasses && res.removedEmptyClasses > 0) details.push(`${res.removedEmptyClasses} kelas kosong dihapus`);
+
+      if (details.length > 0) {
+        setSuccessMessage(`Pembersihan sukses: ${details.join(', ')}. Database sekarang rapi!`);
       } else {
-        setSuccessMessage(`Database bersih: Tidak ditemukan NISN ganda (${res.totalUnique} siswa unik).`);
+        setSuccessMessage(`Database bersih: Tidak ditemukan NISN/Kelas ganda atau kelas kosong.`);
       }
     } catch (err: any) {
-      setErrorMessage(`Gagal menjalankan deduplikasi: ${err.message}`);
+      setErrorMessage(`Gagal menjalankan pembersihan: ${err.message}`);
     } finally {
       setIsExecutingCleanup(false);
       setCleanupActionType(null);
