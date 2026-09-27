@@ -207,8 +207,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <span className="px-2 py-0.5 rounded bg-amber-400 text-amber-950 border border-amber-300">100 Emas</span>
                 <span className="px-2 py-0.5 rounded bg-gradient-to-r from-emerald-700 via-teal-600 to-amber-500 text-white">90 Hijau Keemasan</span>
                 <span className="px-2 py-0.5 rounded bg-emerald-600 text-white">80 Hijau</span>
-                <span className="px-2 py-0.5 rounded bg-yellow-400 text-yellow-950">70 Kuning</span>
-                <span className="px-2 py-0.5 rounded bg-amber-900 text-amber-50">60 Cokelat</span>
+                <span className="px-2 py-0.5 rounded bg-blue-600 text-white">70 Biru Pekat</span>
+                <span className="px-2 py-0.5 rounded bg-purple-500 text-white">60 Lavender</span>
                 <span className="px-2 py-0.5 rounded bg-rose-600 text-white">≤50 Merah</span>
               </div>
             </div>

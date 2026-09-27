@@ -45,10 +45,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-xl bg-emerald-700/80 border border-emerald-500/40 flex items-center justify-center shadow-inner shrink-0">
               <Recycle className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-300 animate-spin-slow" />
             </div>
-            <div className="min-w-0">
-              <div className="flex items-center space-x-1.5">
-                <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider px-1.5 py-0.2 rounded-full bg-emerald-900/80 text-emerald-300 border border-emerald-600/40 truncate">
-                  SMPN 1 Bengkalis
+            <div className="min-w-0 flex flex-col justify-center">
+              <div className="flex items-center space-x-2">
+                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-900/90 text-emerald-200 border border-emerald-600/50 shrink-0">
+                  Guru Penilai
                 </span>
                 <span className="hidden sm:inline-flex items-center space-x-1 text-[11px] text-emerald-200">
                   <span
@@ -59,7 +59,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <span>{firebaseConnected ? 'Online' : 'Offline'}</span>
                 </span>
               </div>
-              <h1 className="text-xs sm:text-base font-extrabold tracking-tight text-white leading-tight truncate">
+              <h1 className="text-xs sm:text-base font-black tracking-tight text-white leading-tight truncate pt-0.5">
                 Kreasi Daur Ulang
               </h1>
             </div>

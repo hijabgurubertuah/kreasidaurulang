@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { ClassRoom, Student } from '../types';
 import { exportClassToExcel, getPredicate } from '../utils/excelExport';
+import { getScoreColorScheme } from './StudentPortalView';
 
 interface ClassDetailViewProps {
   classroom: ClassRoom;
@@ -108,33 +109,36 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
 
   return (
     <div className="w-full max-w-5xl mx-auto px-3 sm:px-6 py-4 space-y-4 animate-fadeIn">
-      {/* Top Header & Navigation - Responsif & Proporsional di Layar HP */}
-      <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-200">
-        <div className="flex items-center space-x-2 min-w-0">
+      {/* Banner Header Hijau Besar untuk Kelas Terpilih */}
+      <div className="bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-800 text-white p-4 sm:p-6 rounded-3xl shadow-md border border-emerald-500/80 flex items-center justify-between gap-3">
+        <div className="flex items-center space-x-3 min-w-0">
           <button
             type="button"
             onClick={onBack}
-            className="flex items-center space-x-1 px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 rounded-xl border border-slate-200 font-bold text-xs shadow-xs transition-colors shrink-0 cursor-pointer active:scale-95"
+            className="flex items-center space-x-1 px-3 py-2 bg-white/20 hover:bg-white/30 text-white rounded-2xl border border-white/30 font-extrabold text-xs shadow-xs transition-colors shrink-0 cursor-pointer active:scale-95 backdrop-blur-xs"
             title="Kembali ke Dashboard"
           >
-            <ArrowLeft className="w-3.5 h-3.5" />
+            <ArrowLeft className="w-4 h-4" />
             <span className="hidden xs:inline">Kembali</span>
           </button>
 
           <div className="min-w-0">
-            <h2 className="text-sm sm:text-lg font-black text-slate-900 truncate leading-tight">
-              {classroom.name}
+            <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-emerald-200 block mb-0.5 opacity-90">
+              PENILAIAN KELAS
+            </span>
+            <h2 className="text-2xl sm:text-4xl font-black tracking-tight text-white uppercase drop-shadow-xs truncate">
+              {classroom.name.toUpperCase()}
             </h2>
-            <p className="text-[11px] text-slate-500 truncate">
-              {totalCount} Siswa • Rata-rata: {avgScore}
+            <p className="text-xs sm:text-sm text-emerald-100 font-medium truncate pt-0.5">
+              {totalCount} Siswa • Rata-rata Sikap: {avgScore}
             </p>
           </div>
         </div>
 
         <div className="flex items-center space-x-1.5 shrink-0">
-          <div className="flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200 text-xs font-bold shadow-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="hidden xs:inline">Real-time Live</span>
+          <div className="flex items-center space-x-1.5 px-3 py-1.5 bg-white/10 backdrop-blur-xs text-white rounded-2xl border border-white/20 text-xs font-extrabold shadow-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="hidden sm:inline">Real-time Live</span>
           </div>
         </div>
       </div>
@@ -175,6 +179,7 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
           filteredStudents.map((student, idx) => {
             const predicate = getPredicate(student.score);
             const isUpdatedRecently = recentUpdatedId === student.id;
+            const scoreStyle = getScoreColorScheme(student.score);
 
             return (
               <div
@@ -250,21 +255,12 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
                       ▼
                     </button>
 
-                    {/* Angka Nilai */}
-                    <div className="w-8 sm:w-10 text-center select-none">
-                      <span
-                        className={`font-black text-xs sm:text-sm tracking-tight ${
-                          student.score >= 90
-                            ? 'text-emerald-700'
-                            : student.score >= 80
-                            ? 'text-teal-700'
-                            : student.score >= 70
-                            ? 'text-amber-700'
-                            : 'text-rose-600'
-                        }`}
-                      >
-                        {student.score}
-                      </span>
+                    {/* Angka Nilai dengan Latar Berwarna Sesuai Tingkat Nilai */}
+                    <div
+                      className={`w-9 sm:w-11 px-1 py-1 rounded-lg border text-center flex items-center justify-center font-black text-xs sm:text-sm tracking-tight transition-all duration-300 shadow-2xs ${scoreStyle.card}`}
+                      title={`Nilai: ${student.score} (${scoreStyle.predicate})`}
+                    >
+                      {student.score}
                     </div>
 
                     {/* Tombol Panah Atas (▲) - Hijau */}

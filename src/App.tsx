@@ -442,13 +442,13 @@ export default function App() {
 
       {/* Footer hanya tampil ketika sudah login (kecuali di halaman siswa) */}
       {activePage !== 'login' && activePage !== 'student-view' && (
-        <footer className="bg-slate-900 text-slate-400 py-6 border-t border-slate-800 text-center text-xs">
-          <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="flex items-center space-x-2">
+        <footer className="bg-slate-900 text-slate-400 py-5 border-t border-slate-800 text-center text-xs">
+          <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+            <div className="flex items-center space-x-2 font-medium">
               <span className="italic">By. TIM MODUL KREASI DAUR ULANG</span>
             </div>
-            <div className="text-slate-500">
-              SMP Negeri 1 Bengkalis • Terhubung ke Firebase Firestore
+            <div className="text-slate-500 font-medium">
+              SMP Negeri 1 Bengkalis
             </div>
           </div>
         </footer>

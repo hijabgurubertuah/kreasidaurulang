@@ -40,6 +40,93 @@ interface DatabaseUsageViewProps {
   }>;
 }
 
+interface CompactPieChartProps {
+  used: number;
+  max: number;
+  title: string;
+  unit: string;
+  colorHex: string;
+  subtext?: string;
+}
+
+const CompactPieChart: React.FC<CompactPieChartProps> = ({
+  used,
+  max,
+  title,
+  unit,
+  colorHex,
+  subtext,
+}) => {
+  const percent = Math.min(100, Math.max(0, (used / max) * 100));
+  const radius = 36;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (percent / 100) * circumference;
+
+  return (
+    <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col items-center justify-between text-center space-y-2">
+      {/* Judul di atasnya */}
+      <div>
+        <h4 className="text-xs font-black text-slate-900 uppercase tracking-wide">
+          {title}
+        </h4>
+        {subtext && <p className="text-[10px] text-slate-500 font-medium">{subtext}</p>}
+      </div>
+
+      {/* Grafik Pai bentuk Donut Compact & Minimalis */}
+      <div className="relative w-32 h-32 flex items-center justify-center my-0.5">
+        <svg className="w-full h-full -rotate-90 transform" viewBox="0 0 100 100">
+          <circle
+            cx="50"
+            cy="50"
+            r={radius}
+            className="stroke-slate-100"
+            strokeWidth="11"
+            fill="transparent"
+          />
+          <circle
+            cx="50"
+            cy="50"
+            r={radius}
+            stroke={colorHex}
+            strokeWidth="11"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            fill="transparent"
+            className="transition-all duration-700 ease-out"
+          />
+        </svg>
+
+        {/* Tanpa Icon di Tengah Pai - Hanya Kuota Berapa Persen Terpakai */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <span className="text-base font-black text-slate-900 tracking-tight leading-none">
+            {percent < 0.1 && percent > 0 ? '< 0.1%' : `${percent.toFixed(1)}%`}
+          </span>
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+            terpakai
+          </span>
+        </div>
+      </div>
+
+      {/* Rincian Angka Bawah */}
+      <div className="w-full pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+        <div className="text-left">
+          <span className="text-slate-400 block text-[9px] font-bold uppercase">Terpakai</span>
+          <span className="font-extrabold text-slate-900">
+            {used >= 1000 ? used.toLocaleString('id-ID') : used} {unit}
+          </span>
+        </div>
+        <div className="text-right">
+          <span className="text-slate-400 block text-[9px] font-bold uppercase">Batas Harian</span>
+          <span className="font-extrabold text-slate-700">
+            {max >= 1000 ? max.toLocaleString('id-ID') : max} {unit}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const DatabaseUsageView: React.FC<DatabaseUsageViewProps> = ({
   students,
   classes,
@@ -287,179 +374,67 @@ export const DatabaseUsageView: React.FC<DatabaseUsageViewProps> = ({
         </div>
       )}
 
-      {/* 4 Kartu Grafik Penggunaan Database & Kuota */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* 1. Kapasitas Penyimpanan (1 GB) */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs space-y-3 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                <HardDrive className="w-4 h-4" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-slate-900">Penyimpanan (1 GB)</h4>
-                <p className="text-[10px] text-slate-500">Kapasitas Database</p>
-              </div>
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
-              Free Tier
-            </span>
-          </div>
+      {/* Grafik Pai Compact dan Minimalis Kuota Database */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* 1. Pai Kuota Baca Firestore */}
+        <CompactPieChart
+          title="KUOTA BACA FIRESTORE"
+          subtext="Batas 50.000 Reads / Hari"
+          used={readsUsed}
+          max={FIREBASE_LIMITS.MAX_READS_DAILY}
+          unit="reads"
+          colorHex="#059669"
+        />
 
-          <div className="space-y-1.5">
-            <div className="flex items-baseline justify-between text-xs">
-              <span className="font-extrabold text-slate-900 text-sm">
-                {currentMB} <span className="text-xs font-normal text-slate-500">MB</span>
-              </span>
-              <span className="text-[11px] text-slate-500 font-semibold">
-                dari {storageLimitMB} MB (1 GB)
-              </span>
-            </div>
+        {/* 2. Pai Kuota Tulis Firestore */}
+        <CompactPieChart
+          title="KUOTA TULIS FIRESTORE"
+          subtext="Batas 20.000 Writes / Hari"
+          used={writesUsed}
+          max={FIREBASE_LIMITS.MAX_WRITES_DAILY}
+          unit="writes"
+          colorHex="#d97706"
+        />
 
-            {/* Progress bar */}
-            <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-              <div
-                className="bg-blue-600 h-2.5 rounded-full transition-all duration-500"
-                style={{ width: `${Math.max(1, storagePercent)}%` }}
-              />
-            </div>
+        {/* 3. Pai Kapasitas Penyimpanan */}
+        <CompactPieChart
+          title="KAPASITAS PENYIMPANAN"
+          subtext="Batas 1 GB (1.024 MB)"
+          used={parseFloat(currentMB)}
+          max={storageLimitMB}
+          unit="MB"
+          colorHex="#2563eb"
+        />
+      </div>
 
-            <div className="flex items-center justify-between text-[11px] pt-1 text-slate-600">
-              <span>Terpakai: {currentKB} KB</span>
-              <span className="font-bold text-emerald-600">Sisa: ~1.00 GB (99.9%)</span>
-            </div>
-          </div>
+      {/* Kartu Penjelasan Kuota Baca & Solusi Hemat */}
+      <div className="bg-amber-50/80 border border-amber-200/90 rounded-2xl p-4 sm:p-5 space-y-3">
+        <div className="flex items-center space-x-2 text-amber-900 font-extrabold text-xs sm:text-sm">
+          <Info className="w-4 h-4 text-amber-700 shrink-0" />
+          <span>Analisis Penggunaan Kuota Baca & Solusi Hemat (Puluhan Guru)</span>
         </div>
 
-        {/* 2. Sisa Kuota Tulis (Writes / Hari) */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs space-y-3 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-                <PenTool className="w-4 h-4" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-slate-900">Kuota Tulis (Writes)</h4>
-                <p className="text-[10px] text-slate-500">Batas Harian (20k/hari)</p>
-              </div>
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
-              Hari Ini
-            </span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-amber-950 leading-relaxed">
+          <div className="bg-white/80 p-3 rounded-xl border border-amber-200/60 space-y-1.5">
+            <h5 className="font-bold text-amber-900 flex items-center space-x-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+              <span>Mengapa Pembacaan (Reads) Cepat Bertambah?</span>
+            </h5>
+            <p className="text-[11px] text-slate-700">
+              Firestore menggunakan koneksi <strong>Real-time Listener (`onSnapshot`)</strong>. Saat aplikasi dibuka atau di-refresh, Firestore membaca 1x per dokumen siswa (misal 300 siswa = 300 reads). Jika berganti tab atau halaman di-reload berulang kali, listener melakukan pemindaian ulang seluruh data.
+            </p>
           </div>
 
-          <div className="space-y-1.5">
-            <div className="flex items-baseline justify-between text-xs">
-              <span className="font-extrabold text-slate-900 text-sm">
-                {writesUsed.toLocaleString()}{' '}
-                <span className="text-xs font-normal text-slate-500">writes</span>
-              </span>
-              <span className="text-[11px] text-slate-500 font-semibold">
-                dari 20.000 / hari
-              </span>
-            </div>
-
-            <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-              <div
-                className="bg-amber-500 h-2.5 rounded-full transition-all duration-500"
-                style={{ width: `${Math.max(1, writesPercent)}%` }}
-              />
-            </div>
-
-            <div className="flex items-center justify-between text-[11px] pt-1 text-slate-600">
-              <span>{writesPercent.toFixed(1)}% terpakai</span>
-              <span className="font-bold text-emerald-600">
-                Sisa: {writesRemaining.toLocaleString()}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* 3. Sisa Kuota Baca (Reads / Hari) */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs space-y-3 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-                <BookOpen className="w-4 h-4" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-slate-900">Kuota Baca (Reads)</h4>
-                <p className="text-[10px] text-slate-500">Batas Harian (50k/hari)</p>
-              </div>
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
-              Hari Ini
-            </span>
-          </div>
-
-          <div className="space-y-1.5">
-            <div className="flex items-baseline justify-between text-xs">
-              <span className="font-extrabold text-slate-900 text-sm">
-                {readsUsed.toLocaleString()}{' '}
-                <span className="text-xs font-normal text-slate-500">reads</span>
-              </span>
-              <span className="text-[11px] text-slate-500 font-semibold">
-                dari 50.000 / hari
-              </span>
-            </div>
-
-            <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-              <div
-                className="bg-emerald-600 h-2.5 rounded-full transition-all duration-500"
-                style={{ width: `${Math.max(1, readsPercent)}%` }}
-              />
-            </div>
-
-            <div className="flex items-center justify-between text-[11px] pt-1 text-slate-600">
-              <span>{readsPercent.toFixed(1)}% terpakai</span>
-              <span className="font-bold text-emerald-600">
-                Sisa: {readsRemaining.toLocaleString()}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* 4. Sisa Kuota Hapus (Deletes / Hari) */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs space-y-3 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
-                <Trash2 className="w-4 h-4" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-slate-900">Kuota Hapus (Deletes)</h4>
-                <p className="text-[10px] text-slate-500">Batas Harian (20k/hari)</p>
-              </div>
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700">
-              Hari Ini
-            </span>
-          </div>
-
-          <div className="space-y-1.5">
-            <div className="flex items-baseline justify-between text-xs">
-              <span className="font-extrabold text-slate-900 text-sm">
-                {deletesUsed.toLocaleString()}{' '}
-                <span className="text-xs font-normal text-slate-500">deletes</span>
-              </span>
-              <span className="text-[11px] text-slate-500 font-semibold">
-                dari 20.000 / hari
-              </span>
-            </div>
-
-            <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-              <div
-                className="bg-rose-500 h-2.5 rounded-full transition-all duration-500"
-                style={{ width: `${Math.max(1, deletesPercent)}%` }}
-              />
-            </div>
-
-            <div className="flex items-center justify-between text-[11px] pt-1 text-slate-600">
-              <span>{deletesPercent.toFixed(1)}% terpakai</span>
-              <span className="font-bold text-emerald-600">
-                Sisa: {deletesRemaining.toLocaleString()}
-              </span>
-            </div>
+          <div className="bg-white/80 p-3 rounded-xl border border-amber-200/60 space-y-1.5">
+            <h5 className="font-bold text-emerald-900 flex items-center space-x-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+              <span>Solusi Hemat Kuota untuk Puluhan Guru:</span>
+            </h5>
+            <ul className="text-[11px] text-slate-700 list-disc list-inside space-y-1">
+              <li><strong>Cache Memory/Browser:</strong> Data otomatis disimpan di browser lokal agar tidak menembak server berkali-kali.</li>
+              <li><strong>Hapus NISN/Kelas Ganda:</strong> Gunakan tombol "Bersihkan NISN & Kelas Ganda" di bawah agar jumlah dokumen yang dibaca lebih sedikit.</li>
+              <li><strong>Hindari Sering Refresh:</strong> Tidak perlu merefresh halaman manual, karena skor siswa akan ter-update otomatis secara real-time.</li>
+            </ul>
           </div>
         </div>
       </div>

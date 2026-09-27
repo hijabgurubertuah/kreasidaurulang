@@ -114,29 +114,29 @@ export const getScoreColorScheme = (score: number | null) => {
   }
 
   if (score >= 70) {
-    // Kuning / Yellow (70)
+    // Biru Terang Agak Pekat / Vibrant Royal Blue (70)
     return {
-      card: 'bg-yellow-400 text-yellow-950 border-yellow-300 shadow-xs',
-      textScore: 'text-yellow-950 font-black',
-      label: 'text-yellow-900 font-bold',
-      badge: 'bg-yellow-950 text-yellow-200 border-yellow-400 font-extrabold',
-      heroBg: 'bg-gradient-to-br from-yellow-300 via-yellow-400 to-amber-400 text-yellow-950 border-2 border-yellow-300 shadow-xl shadow-yellow-400/20',
-      heroBadge: 'bg-yellow-950 text-yellow-200 border border-yellow-400',
-      subtext: 'text-yellow-900',
-      predicate: 'Kurang',
+      card: 'bg-blue-600 text-white border-blue-500 shadow-xs',
+      textScore: 'text-white font-black',
+      label: 'text-blue-100 font-bold',
+      badge: 'bg-blue-950 text-blue-200 border-blue-400 font-extrabold',
+      heroBg: 'bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 text-white border-2 border-blue-400 shadow-xl shadow-blue-600/20',
+      heroBadge: 'bg-blue-950 text-blue-200 border border-blue-400',
+      subtext: 'text-blue-100',
+      predicate: 'Cukup',
     };
   }
 
   if (score >= 60) {
-    // Cokelat Sedang / Medium Brown (60)
+    // Lavender / Ungu Lavender (60)
     return {
-      card: 'bg-amber-900 text-amber-50 border-amber-800 shadow-xs',
-      textScore: 'text-amber-50 font-black',
-      label: 'text-amber-100 font-bold',
-      badge: 'bg-amber-950 text-amber-200 border-amber-600 font-extrabold',
-      heroBg: 'bg-gradient-to-br from-amber-800 via-amber-900 to-stone-900 text-amber-50 border-2 border-amber-700 shadow-xl shadow-amber-900/20',
-      heroBadge: 'bg-amber-950 text-amber-200 border border-amber-600',
-      subtext: 'text-amber-100',
+      card: 'bg-purple-500 text-white border-purple-400 shadow-xs',
+      textScore: 'text-white font-black',
+      label: 'text-purple-100 font-bold',
+      badge: 'bg-purple-950 text-purple-200 border-purple-400 font-extrabold',
+      heroBg: 'bg-gradient-to-br from-purple-500 via-purple-600 to-indigo-700 text-white border-2 border-purple-400 shadow-xl shadow-purple-500/20',
+      heroBadge: 'bg-purple-950 text-purple-200 border border-purple-400',
+      subtext: 'text-purple-100',
       predicate: 'Sangat kurang',
     };
   }
