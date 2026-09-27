@@ -9,9 +9,11 @@ import {
   writeBatch,
   query,
   where,
+  orderBy,
+  limit,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { ClassRoom, Student, TeacherCode } from '../types';
+import { ClassRoom, Student, TeacherCode, MeetingSchedule, SystemLog } from '../types';
 import {
   DEFAULT_CLASSES,
   DEFAULT_STUDENTS,
@@ -83,7 +85,9 @@ export function listenToStudents(
             id: data.id || docSnap.id,
           });
         });
-        recordQuotaUsage({ reads: snapshot.docChanges().length || snapshot.size });
+        if (!snapshot.metadata.fromCache) {
+          recordQuotaUsage({ reads: snapshot.docChanges().length || 1 });
+        }
         onUpdate(list);
       },
       (error) => {
@@ -112,7 +116,9 @@ export function listenToClasses(
         snapshot.forEach((docSnap) => {
           list.push(docSnap.data() as ClassRoom);
         });
-        recordQuotaUsage({ reads: snapshot.docChanges().length || snapshot.size });
+        if (!snapshot.metadata.fromCache) {
+          recordQuotaUsage({ reads: snapshot.docChanges().length || 1 });
+        }
         onUpdate(list);
       },
       (error) => {
@@ -147,7 +153,9 @@ export function listenToTeacherCodes(
             list.push({ ...data, id: data.id || docSnap.id });
           }
         });
-        recordQuotaUsage({ reads: snapshot.docChanges().length || snapshot.size });
+        if (!snapshot.metadata.fromCache) {
+          recordQuotaUsage({ reads: snapshot.docChanges().length || 1 });
+        }
         onUpdate(list);
       },
       (error) => {
@@ -890,3 +898,185 @@ export async function getSpreadsheetUrlFromDb(): Promise<string> {
   }
   return '';
 }
+
+const SCHEDULES_COL = 'schedules';
+
+/**
+ * Real-time listener for schedules
+ */
+export function listenToSchedules(
+  onUpdate: (schedules: MeetingSchedule[]) => void,
+  onError?: (err: Error) => void
+) {
+  try {
+    return onSnapshot(
+      collection(db, SCHEDULES_COL),
+      (snapshot) => {
+        const list: MeetingSchedule[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push(docSnap.data() as MeetingSchedule);
+        });
+        
+        // Sort by meetingNumber (1 to 20)
+        list.sort((a, b) => a.meetingNumber - b.meetingNumber);
+
+        if (!snapshot.metadata.fromCache) {
+          recordQuotaUsage({ reads: snapshot.docChanges().length || 1 });
+        }
+        onUpdate(list);
+      },
+      (error) => {
+        console.warn('Schedules snapshot listener error:', error);
+        if (onError) onError(error);
+      }
+    );
+  } catch (err) {
+    console.warn('listenToSchedules failed, using local mode:', err);
+    return () => {};
+  }
+}
+
+/**
+ * Save / update meeting schedule active date in Firestore
+ */
+export async function saveScheduleInDb(schedule: MeetingSchedule) {
+  try {
+    const ref = doc(db, SCHEDULES_COL, schedule.id);
+    await setDoc(ref, cleanObject(schedule), { merge: true });
+    recordQuotaUsage({ writes: 1 });
+  } catch (err) {
+    console.warn('Failed to save schedule to Firestore:', err);
+  }
+}
+
+/**
+ * Update a student's score and notes for a specific meeting index (0 to 19)
+ */
+export async function updateStudentMeetingScoreInDb(
+  studentId: string,
+  meetingIndex: number,
+  newScore: number,
+  notes?: string
+) {
+  try {
+    const studentRef = doc(db, STUDENTS_COL, studentId);
+    
+    // Fetch latest student doc to guarantee we don't drop other meeting data
+    const { getDoc } = await import('firebase/firestore');
+    const snap = await getDoc(studentRef);
+    
+    let currentMeetingScores: (number | null)[] = Array(20).fill(null);
+    let currentMeetingNotes: (string | null)[] = Array(20).fill(null);
+    let currentMainScore = 80;
+    
+    if (snap.exists()) {
+      const data = snap.data() as Student;
+      currentMainScore = data.score;
+      if (data.meetingScores && data.meetingScores.length === 20) {
+        currentMeetingScores = [...data.meetingScores];
+      } else {
+        currentMeetingScores[0] = data.score; // populate meeting 1 as fallback
+      }
+      if (data.meetingNotes && data.meetingNotes.length === 20) {
+        currentMeetingNotes = [...data.meetingNotes];
+      } else {
+        currentMeetingNotes[0] = data.notes || '';
+      }
+    }
+    
+    // Update at targeted index
+    currentMeetingScores[meetingIndex] = newScore;
+    if (notes !== undefined) {
+      currentMeetingNotes[meetingIndex] = notes;
+    }
+    
+    // Compute average score of active sessions
+    const validScores = currentMeetingScores.filter(
+      (s): s is number => typeof s === 'number' && s !== null
+    );
+    const avgScore =
+      validScores.length > 0
+        ? Math.round(validScores.reduce((sum, val) => sum + val, 0) / validScores.length)
+        : newScore;
+
+    const updatePayload: Partial<Student> = {
+      score: avgScore,
+      meetingScores: currentMeetingScores,
+      meetingNotes: currentMeetingNotes,
+      lastUpdated: new Date().toISOString(),
+    };
+    
+    // If updating index 0, sync to main notes field too
+    if (meetingIndex === 0 && notes !== undefined) {
+      updatePayload.notes = notes;
+    }
+
+    await updateDoc(studentRef, cleanObject(updatePayload));
+    recordQuotaUsage({ writes: 1 });
+  } catch (err) {
+    console.warn('Failed to update student meeting score in db:', err);
+  }
+}
+
+const SYSTEM_LOGS_COL = 'system_logs';
+
+/**
+ * Add a system data change log
+ */
+export async function addSystemLog(
+  action: string,
+  description: string,
+  operator: string = 'ADMIN123'
+): Promise<void> {
+  try {
+    const logId = `log-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const logRef = doc(db, SYSTEM_LOGS_COL, logId);
+    const newLog: SystemLog = {
+      id: logId,
+      action,
+      description,
+      operator,
+      timestamp: new Date().toISOString(),
+    };
+    await setDoc(logRef, newLog);
+    recordQuotaUsage({ writes: 1 });
+  } catch (err) {
+    console.warn('Failed to add system log:', err);
+  }
+}
+
+/**
+ * Subscribe to the latest system change logs
+ */
+export function listenToSystemLogs(
+  onUpdate: (logs: SystemLog[]) => void,
+  maxCount: number = 50
+) {
+  try {
+    const q = query(
+      collection(db, SYSTEM_LOGS_COL),
+      orderBy('timestamp', 'desc'),
+      limit(maxCount)
+    );
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const list: SystemLog[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push(docSnap.data() as SystemLog);
+        });
+        if (!snapshot.metadata.fromCache) {
+          recordQuotaUsage({ reads: snapshot.docChanges().length || 1 });
+        }
+        onUpdate(list);
+      },
+      (error) => {
+        console.warn('System logs listener error:', error);
+      }
+    );
+  } catch (err) {
+    console.warn('listenToSystemLogs failed:', err);
+    return () => {};
+  }
+}
+

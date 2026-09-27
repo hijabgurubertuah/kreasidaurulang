@@ -48,7 +48,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="min-w-0 flex flex-col justify-center">
               <div className="flex items-center space-x-2">
                 <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-900/90 text-emerald-200 border border-emerald-600/50 shrink-0">
-                  Guru Penilai
+                  {activePage === 'admin-portal' ? 'Panel admin' : 'Guru Penilai'}
                 </span>
                 <span className="hidden sm:inline-flex items-center space-x-1 text-[11px] text-emerald-200">
                   <span
@@ -160,9 +160,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                       ? 'Guru Pembina'
                       : `Siswa (${currentUser.identifier})`}
                   </div>
-                </div>
-                <div className="w-8 h-8 rounded-full bg-emerald-950 flex items-center justify-center text-emerald-200 border border-emerald-600/50">
-                  <User className="w-4 h-4" />
                 </div>
                 <button
                   type="button"

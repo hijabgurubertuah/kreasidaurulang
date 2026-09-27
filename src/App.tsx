@@ -12,6 +12,7 @@ import {
   TeacherCode,
   CurrentUser,
   ActivePage,
+  MeetingSchedule,
 } from './types';
 import {
   DEFAULT_CLASSES,
@@ -35,6 +36,11 @@ import {
   clearAllTeacherCodesInDb,
   resetDatabaseToDefaultsInDb,
   deduplicateStudentsInDb,
+  listenToSchedules,
+  saveScheduleInDb,
+  updateStudentMeetingScoreInDb,
+  addSystemLog,
+  listenToSystemLogs,
 } from './services/firestoreService';
 import { exportAllClassesToExcel } from './utils/excelExport';
 import { CheckCircle2, X } from 'lucide-react';
@@ -45,6 +51,7 @@ export default function App() {
   const [classes, setClasses] = useState<ClassRoom[]>(DEFAULT_CLASSES);
   const [students, setStudents] = useState<Student[]>(DEFAULT_STUDENTS);
   const [teacherCodes, setTeacherCodes] = useState<TeacherCode[]>(DEFAULT_TEACHER_CODES);
+  const [schedules, setSchedules] = useState<MeetingSchedule[]>([]);
 
   // Restore login session from device storage if available
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(() => {
@@ -131,11 +138,21 @@ export default function App() {
       () => {}
     );
 
+    // Subscribe to schedules
+    const unsubscribeSchedules = listenToSchedules(
+      (updatedSchedules) => {
+        if (!isMounted) return;
+        setSchedules(updatedSchedules);
+      },
+      () => {}
+    );
+
     return () => {
       isMounted = false;
       unsubscribeStudents();
       unsubscribeClasses();
       unsubscribeTeacherCodes();
+      unsubscribeSchedules();
     };
   }, []);
 
@@ -180,6 +197,48 @@ export default function App() {
     [students]
   );
 
+  // Update meeting-specific score and notes with immediate Firestore real-time persistence
+  const handleUpdateMeetingScore = useCallback(
+    async (studentId: string, meetingIndex: number, newScore: number, notes?: string) => {
+      setStudents((prev) =>
+        prev.map((s) => {
+          if (s.id !== studentId) return s;
+          const currentScores = s.meetingScores && s.meetingScores.length === 20 ? [...s.meetingScores] : Array(20).fill(null);
+          const currentNotes = s.meetingNotes && s.meetingNotes.length === 20 ? [...s.meetingNotes] : Array(20).fill(null);
+          
+          if (currentScores[0] === null) {
+            currentScores[0] = s.score;
+          }
+          if (currentNotes[0] === null) {
+            currentNotes[0] = s.notes || '';
+          }
+
+          currentScores[meetingIndex] = newScore;
+          if (notes !== undefined) {
+            currentNotes[meetingIndex] = notes;
+          }
+
+          const validScores = currentScores.filter((x): x is number => typeof x === 'number' && x !== null);
+          const avgScore = validScores.length > 0 ? Math.round(validScores.reduce((sum, val) => sum + val, 0) / validScores.length) : newScore;
+
+          return {
+            ...s,
+            score: avgScore,
+            meetingScores: currentScores,
+            meetingNotes: currentNotes,
+            notes: meetingIndex === 0 && notes !== undefined ? notes : s.notes
+          };
+        })
+      );
+      try {
+        await updateStudentMeetingScoreInDb(studentId, meetingIndex, newScore, notes);
+      } catch (err) {
+        console.error('Failed to update student meeting score:', err);
+      }
+    },
+    []
+  );
+
   // Admin student management - saves immediately to Firebase
   const handleSaveStudent = async (student: Student) => {
     const cleanNisn = student.nisn.trim();
@@ -190,6 +249,10 @@ export default function App() {
       nisn: cleanNisn,
       lastUpdated: new Date().toISOString(),
     };
+
+    const isEdit = students.some(
+      (s) => s.id === standardId || s.nisn.trim().toLowerCase() === cleanNisn.toLowerCase()
+    );
 
     setStudents((prev) => {
       const idx = prev.findIndex(
@@ -204,14 +267,27 @@ export default function App() {
     });
 
     await saveStudentInDb(standardized);
+    await addSystemLog(
+      isEdit ? 'EDIT_SISWA' : 'TAMBAH_SISWA',
+      `${isEdit ? 'Memperbarui' : 'Menambahkan'} siswa "${student.name}" (NISN: ${cleanNisn}) di ${student.className}`,
+      currentUser?.identifier || 'ADMIN'
+    );
   };
 
   // Delete single student - deletes immediately from Firebase
   const handleDeleteStudent = async (studentId: string) => {
+    const student = students.find((s) => s.id === studentId);
     setStudents((prev) => prev.filter((s) => s.id !== studentId));
     await deleteStudentInDb(studentId);
     setSaveSuccessNotification('Siswa berhasil dihapus langsung dari database Firebase.');
     setTimeout(() => setSaveSuccessNotification(null), 3000);
+    if (student) {
+      await addSystemLog(
+        'HAPUS_SISWA',
+        `Menghapus siswa "${student.name}" (NISN: ${student.nisn}) dari kelas ${student.className}`,
+        currentUser?.identifier || 'ADMIN'
+      );
+    }
   };
 
   // Bulk Delete students - deletes immediately from Firebase seketika
@@ -223,6 +299,11 @@ export default function App() {
       `${deletedCount} siswa berhasil dihapus seketika dari Firebase Firestore & tersinkronisasi ke seluruh perangkat!`
     );
     setTimeout(() => setSaveSuccessNotification(null), 4000);
+    await addSystemLog(
+      'HAPUS_SISWA_MASSAL',
+      `Menghapus secara massal ${deletedCount} siswa dari database`,
+      currentUser?.identifier || 'ADMIN'
+    );
   };
 
   // Sync CSV data to Firebase immediately with anti-duplication
@@ -235,24 +316,47 @@ export default function App() {
       `Berhasil menyinkronkan ${newStudents.length} siswa langsung ke Firebase Firestore!`
     );
     setTimeout(() => setSaveSuccessNotification(null), 4000);
+    await addSystemLog(
+      'SINKRONISASI_CSV',
+      `Melakukan sinkronisasi data CSV/Spreadsheet berisi ${newStudents.length} data siswa`,
+      currentUser?.identifier || 'ADMIN'
+    );
   };
 
   // Create new Teacher Code
   const handleCreateTeacherCode = async (newCode: TeacherCode) => {
     setTeacherCodes((prev) => [...prev, newCode]);
     await createTeacherCodeInDb(newCode);
+    await addSystemLog(
+      'TAMBAH_GURU',
+      `Menambahkan akun guru/admin baru: "${newCode.name}" (Kode: ${newCode.code}, Peran: ${newCode.role})`,
+      currentUser?.identifier || 'ADMIN'
+    );
   };
 
   // Delete Teacher Code
   const handleDeleteTeacherCode = async (codeId: string) => {
+    const code = teacherCodes.find((c) => c.id === codeId);
     setTeacherCodes((prev) => prev.filter((c) => c.id !== codeId));
     await deleteTeacherCodeInDb(codeId);
+    if (code) {
+      await addSystemLog(
+        'HAPUS_GURU',
+        `Menghapus akun guru/admin: "${code.name}" (Kode: ${code.code})`,
+        currentUser?.identifier || 'ADMIN'
+      );
+    }
   };
 
   // Clear all students from Firebase
   const handleClearAllStudents = async (): Promise<number> => {
     const count = await clearAllStudentsInDb();
     setStudents([]);
+    await addSystemLog(
+      'BERSIHKAN_SEMUA_SISWA',
+      `Mengosongkan seluruh data siswa (${count} siswa) dari Firebase Firestore`,
+      currentUser?.identifier || 'ADMIN'
+    );
     return count;
   };
 
@@ -261,6 +365,11 @@ export default function App() {
     const count = await clearAllTeacherCodesInDb();
     setTeacherCodes((prev) =>
       prev.filter((t) => t.code === 'ADMIN123' || t.code === 'GURU123')
+    );
+    await addSystemLog(
+      'BERSIHKAN_KODE_GURU',
+      `Menghapus seluruh kode login guru tambahan dari Firebase`,
+      currentUser?.identifier || 'ADMIN'
     );
     return count;
   };
@@ -271,12 +380,32 @@ export default function App() {
     setStudents(DEFAULT_STUDENTS);
     setClasses(DEFAULT_CLASSES);
     setTeacherCodes(DEFAULT_TEACHER_CODES);
+    await addSystemLog(
+      'RESET_DATABASE',
+      `Mereset seluruh data database kembali ke konfigurasi bawaan`,
+      currentUser?.identifier || 'ADMIN'
+    );
   };
 
   // Deduplicate students in Firebase
   const handleDeduplicateStudents = async () => {
     const result = await deduplicateStudentsInDb();
+    const detail = `Menggabungkan ${result.removedDuplicates} data NISN ganda dan ${result.removedClassDuplicates || 0} kelas ganda`;
+    await addSystemLog(
+      'RAPIKAN_DATABASE',
+      detail,
+      currentUser?.identifier || 'ADMIN'
+    );
     return result;
+  };
+
+  const handleSaveSchedule = async (schedule: MeetingSchedule) => {
+    await saveScheduleInDb(schedule);
+    await addSystemLog(
+      'UPDATE_JADWAL',
+      `Memperbarui tanggal aktif Pertemuan ${schedule.meetingNumber} menjadi ${schedule.activeDate || 'Tiap Saat'}`,
+      currentUser?.identifier || 'ADMIN'
+    );
   };
 
   const handleExportAll = () => {
@@ -371,6 +500,8 @@ export default function App() {
               students={students}
               classes={classes}
               teacherCodes={teacherCodes}
+              schedules={schedules}
+              onSaveSchedule={handleSaveSchedule}
               onBackToDashboard={() => setActivePage('dashboard')}
               onSaveStudent={handleSaveStudent}
               onDeleteStudent={handleDeleteStudent}
@@ -407,9 +538,12 @@ export default function App() {
             <ClassDetailView
               classroom={selectedClass}
               students={students}
+              classes={classes}
+              schedules={schedules}
               onBack={handleBackToDashboard}
               onUpdateScore={handleUpdateScore}
               onUpdateNotes={handleUpdateNotes}
+              onUpdateMeetingScore={handleUpdateMeetingScore}
             />
           </div>
         )}

@@ -31,11 +31,13 @@ import {
   Square,
   MinusSquare,
   Award,
+  MessageSquare,
+  Calendar,
 } from 'lucide-react';
-import { ClassRoom, Student, TeacherCode } from '../types';
+import { ClassRoom, Student, TeacherCode, MeetingSchedule, SystemLog } from '../types';
 import { parseStudentCsv, ParsedCsvResult } from '../utils/csvParser';
 import { downloadSampleCsvTemplate } from '../utils/excelExport';
-import { getScoreColorScheme } from './StudentPortalView';
+import { getScoreColorScheme, getQuoteForScore } from './StudentPortalView';
 import {
   parseGoogleSheetsUrl,
   fetchGoogleSheetCsv,
@@ -43,6 +45,7 @@ import {
 import {
   getSpreadsheetUrlFromDb,
   saveSpreadsheetUrlInDb,
+  listenToSystemLogs,
 } from '../services/firestoreService';
 import { TeacherBarcodeModal } from './TeacherBarcodeModal';
 import { StudentBarcodeModal } from './StudentBarcodeModal';
@@ -52,6 +55,8 @@ interface AdminPortalViewProps {
   students: Student[];
   classes: ClassRoom[];
   teacherCodes: TeacherCode[];
+  schedules?: MeetingSchedule[];
+  onSaveSchedule?: (schedule: MeetingSchedule) => void | Promise<void>;
   onBackToDashboard: () => void;
   onSaveStudent: (student: Student) => void | Promise<void>;
   onDeleteStudent: (studentId: string) => void | Promise<void>;
@@ -81,6 +86,8 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   students,
   classes,
   teacherCodes,
+  schedules = [],
+  onSaveSchedule,
   onBackToDashboard,
   onSaveStudent,
   onDeleteStudent,
@@ -99,11 +106,15 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   isSavingToFirebase = false,
   onDiscardPendingChanges,
 }) => {
-  const [activeTab, setActiveTab] = useState<'spreadsheet' | 'students' | 'scores' | 'teachers' | 'database'>('spreadsheet');
+  const [activeTab, setActiveTab] = useState<'spreadsheet' | 'students' | 'scores' | 'teachers' | 'database' | 'schedule'>('scores');
+
+  // Scheduling edit states
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
+  const [tempActiveDate, setTempActiveDate] = useState<string>('');
 
   // Search & filter for students
   const [searchStudent, setSearchStudent] = useState('');
-  const [selectedClassFilter, setSelectedClassFilter] = useState('');
+  const [selectedClassFilter, setSelectedClassFilter] = useState('Kelas 7A');
 
   // Checkbox selection state for bulk actions
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
@@ -133,6 +144,10 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
 
   const [selectedStudentForBarcode, setSelectedStudentForBarcode] = useState<Student | null>(null);
   const [isStudentBarcodeOpen, setIsStudentBarcodeOpen] = useState(false);
+
+  // Modal Student Recaps (identical to teacher's tab view)
+  const [selectedStudentForModal, setSelectedStudentForModal] = useState<Student | null>(null);
+  const [selectedMeetingIndex, setSelectedMeetingIndex] = useState<number>(0);
 
   // Teacher Code Form
   const [newCodeInput, setNewCodeInput] = useState('');
@@ -171,6 +186,17 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         setSpreadsheetUrl(savedUrl);
       }
     });
+  }, []);
+
+  // System logs state
+  const [systemLogs, setSystemLogs] = useState<SystemLog[]>([]);
+
+  // Subscribe to real-time system logs
+  useEffect(() => {
+    const unsubscribe = listenToSystemLogs((logs) => {
+      setSystemLogs(logs);
+    });
+    return () => unsubscribe();
   }, []);
 
   // Filtered Students (Sorted by Class Name, then Alphabetically by Student Name A-Z)
@@ -491,6 +517,64 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     setTimeout(() => setCopiedCodeId(null), 1500);
   };
 
+  const handleExportScoresToCsv = () => {
+    const classNameLabel = selectedClassFilter || 'Semua Kelas';
+    const headers = ['No', 'Nama Siswa', 'NISN', 'Kelas'];
+    for (let i = 1; i <= 20; i++) {
+      headers.push(`P${i}`);
+    }
+    headers.push('Rata-Rata Akhir');
+
+    const rows = filteredStudents.map((st, idx) => {
+      const meetingScores = st.meetingScores || [];
+      const validScores = meetingScores.filter(
+        (s): s is number => typeof s === 'number' && s !== null
+      );
+      const effectiveValidScores =
+        validScores.length > 0 ? validScores : [st.score];
+      const avgScore = Math.round(
+        effectiveValidScores.reduce((sum, val) => sum + val, 0) / effectiveValidScores.length
+      );
+
+      const rowData = [
+        String(idx + 1),
+        st.name,
+        st.nisn,
+        st.className,
+      ];
+
+      for (let i = 0; i < 20; i++) {
+        let mScore: any = '';
+        if (meetingScores[i] !== undefined && meetingScores[i] !== null) {
+          mScore = meetingScores[i];
+        } else if (i === 0) {
+          mScore = st.score;
+        }
+        rowData.push(mScore !== '' ? String(mScore) : '-');
+      }
+
+      rowData.push(String(avgScore));
+      return rowData;
+    });
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(val => {
+        const escaped = String(val).replace(/"/g, '""');
+        return `"${escaped}"`;
+      }).join(','))
+    ].join('\n');
+
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Rekap_Nilai_${classNameLabel.replace(/\s+/g, '_')}_SMPN_1_Bengkalis.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Manual File CSV
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -645,35 +729,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
 
   return (
     <div className="w-full max-w-5xl mx-auto px-3 sm:px-6 py-4 space-y-4 animate-fadeIn">
-      {/* Header bar - minimalis & proporsional di HP */}
-      <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-200">
-        <div className="flex items-center space-x-2.5 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-slate-900 text-emerald-400 flex items-center justify-center shrink-0 shadow-xs">
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-sm sm:text-lg font-black text-slate-900 truncate leading-tight">
-              Portal Admin
-            </h2>
-            <p className="text-[11px] text-slate-500 truncate flex items-center space-x-1.5">
-              <span className={`w-2 h-2 rounded-full ${firebaseConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-              <span>Real-time Sync • Centang & Hapus Seketika • Database 1 GB</span>
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center space-x-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={onBackToDashboard}
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer active:scale-95"
-          >
-            <LayoutDashboard className="w-3.5 h-3.5" />
-            <span className="hidden xs:inline">Dashboard</span>
-          </button>
-        </div>
-      </div>
-
       {/* Notifications */}
       {successMessage && (
         <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-800 text-xs font-semibold flex items-center justify-between gap-2 animate-fadeIn">
@@ -755,22 +810,22 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         </div>
       )}
 
-      {/* Tab Navigation - 5 Kolom Proporsional */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 bg-slate-200/80 p-1 rounded-2xl gap-1">
+      {/* Tab Navigation - 6 Kolom Proporsional */}
+      <div className="grid grid-cols-3 sm:grid-cols-6 bg-slate-200/80 p-1 rounded-2xl gap-1">
         <button
           type="button"
           onClick={() => {
             setActiveTab('spreadsheet');
             setErrorMessage('');
           }}
-          className={`flex items-center justify-center space-x-1.5 py-2 px-1 rounded-xl text-xs font-bold transition-all cursor-pointer truncate ${
+          className={`flex items-center justify-center space-x-1 py-1.5 px-0.5 rounded-xl text-xs font-bold transition-all cursor-pointer truncate ${
             activeTab === 'spreadsheet'
               ? 'bg-white text-emerald-800 shadow-xs'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-          <span className="truncate">Spreadsheet</span>
+          <span className="truncate ml-1">SPREADSHEET</span>
         </button>
 
         <button
@@ -779,14 +834,14 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
             setActiveTab('students');
             setErrorMessage('');
           }}
-          className={`flex items-center justify-center space-x-1.5 py-2 px-1 rounded-xl text-xs font-bold transition-all cursor-pointer truncate ${
+          className={`flex items-center justify-center space-x-1 py-1.5 px-0.5 rounded-xl text-xs font-bold transition-all cursor-pointer truncate ${
             activeTab === 'students'
               ? 'bg-white text-emerald-800 shadow-xs'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <GraduationCap className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-          <span className="truncate">Siswa ({students.length})</span>
+          <span className="truncate ml-1">SISWA</span>
         </button>
 
         <button
@@ -795,14 +850,14 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
             setActiveTab('scores');
             setErrorMessage('');
           }}
-          className={`flex items-center justify-center space-x-1.5 py-2 px-1 rounded-xl text-xs font-bold transition-all cursor-pointer truncate ${
+          className={`flex items-center justify-center space-x-1 py-1.5 px-0.5 rounded-xl text-xs font-bold transition-all cursor-pointer truncate ${
             activeTab === 'scores'
               ? 'bg-white text-emerald-800 shadow-xs'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <Award className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-          <span className="truncate">Nilai Siswa</span>
+          <span className="truncate ml-1">NILAI SISWA</span>
         </button>
 
         <button
@@ -811,14 +866,30 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
             setActiveTab('teachers');
             setErrorMessage('');
           }}
-          className={`flex items-center justify-center space-x-1.5 py-2 px-1 rounded-xl text-xs font-bold transition-all cursor-pointer truncate ${
+          className={`flex items-center justify-center space-x-1 py-1.5 px-0.5 rounded-xl text-xs font-bold transition-all cursor-pointer truncate ${
             activeTab === 'teachers'
               ? 'bg-white text-emerald-800 shadow-xs'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <KeyRound className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-          <span className="truncate">Kode Guru ({teacherCodes.length})</span>
+          <span className="truncate ml-1">KODE GURU</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('schedule');
+            setErrorMessage('');
+          }}
+          className={`flex items-center justify-center space-x-1 py-1.5 px-0.5 rounded-xl text-xs font-bold transition-all cursor-pointer truncate ${
+            activeTab === 'schedule'
+              ? 'bg-white text-emerald-800 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Calendar className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+          <span className="truncate ml-1">JADWAL</span>
         </button>
 
         <button
@@ -827,14 +898,14 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
             setActiveTab('database');
             setErrorMessage('');
           }}
-          className={`flex items-center justify-center space-x-1.5 py-2 px-1 rounded-xl text-xs font-bold transition-all cursor-pointer truncate ${
+          className={`flex items-center justify-center space-x-1 py-1.5 px-0.5 rounded-xl text-xs font-bold transition-all cursor-pointer truncate ${
             activeTab === 'database'
               ? 'bg-white text-blue-700 shadow-xs'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <Database className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-          <span className="truncate">Database (1 GB)</span>
+          <span className="truncate ml-1">DATABASE</span>
         </button>
       </div>
 
@@ -847,11 +918,8 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
               <div>
                 <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center space-x-1.5">
                   <LinkIcon className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Sinkronisasi Google Spreadsheet Online</span>
+                  <span>Link Spreadsheet</span>
                 </h3>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Tempel link spreadsheet dengan kolom <span className="font-semibold text-slate-700">nama, kelas, nisn</span>.
-                </p>
               </div>
 
               {spreadsheetUrl && (
@@ -889,13 +957,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                 </button>
               </div>
             </div>
-
-            <div className="p-2.5 bg-emerald-50/70 rounded-xl border border-emerald-200 text-[11px] text-emerald-950 leading-relaxed flex items-start space-x-2">
-              <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-              <div>
-                <strong>Hemat Kuota & Anti-Duplikasi:</strong> Saat data ditarik dari spreadsheet, data ditampung di memori lokal terlebih dahulu tanpa langsung menulis ke Firebase. Jika ada NISN yang sudah ada, hanya akan di-update. Klik <strong>"Simpan ke Firebase"</strong> untuk menyimpan permanen ke cloud.
-              </div>
-            </div>
           </div>
 
           {/* Card Alternatif: Unggah File CSV Manual */}
@@ -904,11 +965,8 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
               <div>
                 <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center space-x-1.5">
                   <UploadCloud className="w-4 h-4 text-slate-600 shrink-0" />
-                  <span>Atau Unggah File CSV Manual</span>
+                  <span>Unggah CSV</span>
                 </h3>
-                <p className="text-[11px] text-slate-500">
-                  Unggah file .csv yang diunduh dari spreadsheet
-                </p>
               </div>
 
               <button
@@ -1296,124 +1354,108 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
       {/* TAB: REKAP PENILAIAN SISWA PER KELAS */}
       {activeTab === 'scores' && (
         <div className="space-y-4">
-          {/* Header Banner */}
-          <div className="bg-gradient-to-r from-emerald-800 via-teal-800 to-slate-900 rounded-2xl p-4 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* BANNER HIJAU BESAR UNTUK KELAS TERPILIH */}
+          <div className="bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-800 text-white p-4 sm:p-6 rounded-3xl shadow-md border border-emerald-500/80 flex items-center justify-between gap-4">
             <div>
-              <div className="inline-flex items-center space-x-1.5 bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider mb-1">
-                <Award className="w-3.5 h-3.5 text-amber-300" />
-                <span>Rekap Penilaian Sikap Real-time</span>
-              </div>
-              <h3 className="text-sm sm:text-base font-black leading-tight">
-                Penilaian Siswa Per Kelas (Kokurikuler Daur Ulang)
-              </h3>
-              <p className="text-xs text-slate-200 mt-1">
-                Melihat nama, nilai sikap, predikat warna, serta catatan perkembangan seluruh siswa secara real-time.
-              </p>
+              <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-emerald-200 block mb-1 opacity-90">
+                REKAP
+              </span>
+              <h2 className="text-2xl sm:text-4xl font-black tracking-tight text-white uppercase drop-shadow-xs">
+                {selectedClassFilter ? `KELAS ${selectedClassFilter.replace(/^Kelas\s+/i, '')}` : 'SEMUA KELAS'}
+              </h2>
             </div>
-
             <div className="flex items-center space-x-2 shrink-0">
               <button
                 type="button"
-                onClick={() => downloadSampleCsvTemplate()}
-                className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                onClick={handleExportScoresToCsv}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-emerald-800 font-extrabold rounded-xl text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer shrink-0"
               >
-                Unduh Format CSV
+                <Download className="w-3.5 h-3.5 shrink-0" />
+                <span>Ekspor Nilai ({selectedClassFilter ? selectedClassFilter.replace(/^Kelas\s+/i, '') : 'Semua'})</span>
               </button>
+              <div className="text-right shrink-0 bg-white/10 backdrop-blur-xs px-3.5 py-2 rounded-2xl border border-white/20">
+                <div className="text-2xl sm:text-3xl font-black">{filteredStudents.length}</div>
+                <div className="text-[9px] sm:text-[10px] font-bold text-emerald-100 uppercase tracking-wider">Siswa</div>
+              </div>
             </div>
           </div>
 
-          {/* Controls Bar */}
-          <div className="p-3 bg-white border border-slate-200/90 rounded-2xl shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+          {/* Controls Bar: Dropdown Pilih Kelas */}
+          <div className="p-3.5 bg-white border border-slate-200/90 rounded-2xl shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
               {/* Filter Kelas */}
-              <select
-                value={selectedClassFilter}
-                onChange={(e) => setSelectedClassFilter(e.target.value)}
-                className="w-full sm:w-auto px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 cursor-pointer"
-              >
-                <option value="">Semua Kelas ({classes.length} Kelas)</option>
-                {classes.map((c) => (
-                  <option key={c.id} value={c.name}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center space-x-2 w-full sm:w-auto">
+                <label className="text-xs sm:text-sm font-extrabold text-slate-800 shrink-0">Pilih Kelas:</label>
+                <select
+                  value={selectedClassFilter}
+                  onChange={(e) => setSelectedClassFilter(e.target.value)}
+                  className="w-full sm:w-auto px-4 py-2.5 bg-emerald-50/90 border-2 border-emerald-500 rounded-2xl text-sm sm:text-base font-extrabold text-emerald-950 shadow-xs focus:outline-hidden focus:ring-2 focus:ring-emerald-600 cursor-pointer transition-all"
+                >
+                  <option value="">Semua Kelas ({classes.length} Kelas)</option>
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               {/* Legend Indikator Warna Nilai */}
               <div className="hidden lg:flex items-center space-x-1 text-[10px] font-bold overflow-x-auto py-1">
                 <span className="px-2 py-0.5 rounded bg-amber-400 text-amber-950 border border-amber-300">100 Emas</span>
-                <span className="px-2 py-0.5 rounded bg-slate-300 text-slate-900 border border-slate-400">90 Perak</span>
+                <span className="px-2 py-0.5 rounded bg-gradient-to-r from-emerald-700 via-teal-600 to-amber-500 text-white">90 Hijau Keemasan</span>
                 <span className="px-2 py-0.5 rounded bg-emerald-600 text-white">80 Hijau</span>
-                <span className="px-2 py-0.5 rounded bg-yellow-400 text-yellow-950">70 Kuning</span>
-                <span className="px-2 py-0.5 rounded bg-amber-900 text-amber-50">60 Cokelat</span>
+                <span className="px-2 py-0.5 rounded bg-blue-600 text-white">70 Biru Pekat</span>
+                <span className="px-2 py-0.5 rounded bg-purple-500 text-white">60 Lavender</span>
                 <span className="px-2 py-0.5 rounded bg-rose-600 text-white">≤50 Merah</span>
               </div>
             </div>
-
-            {/* Search Input */}
-            <div className="relative w-full sm:w-64">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={searchStudent}
-                onChange={(e) => setSearchStudent(e.target.value)}
-                placeholder="Cari nama atau NISN..."
-                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
           </div>
 
-          {/* Grid Rekap Nilai Siswa Per Kelas (Cukup Nama, NISN, Nilai, & Catatan Tambahan) */}
-          <div className="space-y-4">
+          {/* Grid Kotak Nilai Siswa (2 Ke Kanan pada HP) */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-700 px-1">
+              <span>Menampilkan {filteredStudents.length} Siswa</span>
+            </div>
+
             {filteredStudents.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
                 {filteredStudents.map((st, idx) => {
                   const style = getScoreColorScheme(st.score);
                   return (
-                    <div
+                    <button
                       key={st.id}
-                      className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 flex flex-col justify-between space-y-2.5 hover:shadow-md transition-all"
+                      type="button"
+                      onClick={() => setSelectedStudentForModal(st)}
+                      className="bg-white rounded-2xl border border-slate-200 hover:border-emerald-500 hover:shadow-md transition-all p-3 flex flex-col justify-between space-y-2 text-left cursor-pointer active:scale-95 group"
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 inline-block mb-1">
+                      <div>
+                        {/* Header Badge Kelas */}
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 truncate max-w-[85%]">
                             {st.className}
                           </span>
-                          <h4 className="font-bold text-sm text-slate-900 truncate leading-snug">
-                            {idx + 1}. {st.name}
-                          </h4>
-                          <div className="text-[11px] font-mono text-slate-500 mt-0.5">
-                            NISN: <strong>{st.nisn}</strong>
-                          </div>
                         </div>
 
-                        {/* Kotak Nilai Diwarnai Sesuai Nilainya */}
-                        <div className={`px-3.5 py-2 rounded-2xl text-center border shrink-0 min-w-[80px] ${style.card}`}>
-                          <div className="text-2xl font-black leading-none tracking-tight">
-                            {st.score}
-                          </div>
-                          <div className="text-[9px] font-extrabold uppercase mt-1 tracking-wider opacity-90 truncate">
-                            {style.predicate}
-                          </div>
-                        </div>
+                        {/* NAMA SISWA */}
+                        <h4
+                          className="font-black text-xs sm:text-sm text-slate-900 group-hover:text-emerald-700 transition-colors leading-snug line-clamp-2"
+                          title={st.name}
+                        >
+                          {idx + 1}. {st.name}
+                        </h4>
                       </div>
 
-                      {/* Catatan Tambahan */}
-                      <div className="pt-2 border-t border-slate-100 text-xs">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
-                          Catatan Tambahan:
-                        </span>
-                        {st.notes ? (
-                          <div className="italic text-[11px] text-slate-700 font-medium leading-relaxed bg-slate-50 p-2 rounded-xl border border-slate-100">
-                            "{st.notes}"
-                          </div>
-                        ) : (
-                          <div className="text-[10px] text-slate-400 italic">
-                            Tidak ada catatan tambahan.
-                          </div>
-                        )}
+                      {/* Kotak Nilai Akhir Diwarnai Sesuai Nilainya */}
+                      <div className={`p-2.5 rounded-xl text-center border ${style.card}`}>
+                        <div className="text-2xl sm:text-3xl font-black tracking-tight">
+                          {st.score}
+                        </div>
+                        <div className="text-[9px] font-extrabold uppercase mt-0.5 tracking-wider opacity-90 truncate">
+                          {style.predicate}
+                        </div>
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -1430,122 +1472,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
       {/* TAB 3: PENGATURAN KODE LOGIN GURU & BARCODE */}
       {activeTab === 'teachers' && (
         <div className="space-y-4">
-          {/* Section: Sediakan Barcode Untuk Login Guru */}
-          <div className="bg-gradient-to-r from-emerald-800 to-slate-900 rounded-2xl p-4 text-white shadow-md">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <div className="inline-flex items-center space-x-1.5 bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider mb-1">
-                  <QrCode className="w-3 h-3" />
-                  <span>Barcode Login Guru</span>
-                </div>
-                <h3 className="text-sm sm:text-base font-black leading-tight">
-                  Sediakan Barcode Untuk Login Cepat Guru
-                </h3>
-                <p className="text-xs text-slate-300 mt-1 max-w-xl">
-                  Guru cukup mengarahkan kamera login ke barcode ini untuk masuk seketika. Klik tombol di bawah untuk menampilkan atau mencetak barcode:
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedTeacherForBarcode(guruDefaultCode);
-                    setIsTeacherBarcodeOpen(true);
-                  }}
-                  className="flex items-center space-x-1.5 px-3 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs shadow-xs transition-colors cursor-pointer"
-                >
-                  <QrCode className="w-4 h-4" />
-                  <span>Barcode Guru (GURU123)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedTeacherForBarcode(adminDefaultCode);
-                    setIsTeacherBarcodeOpen(true);
-                  }}
-                  className="flex items-center space-x-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold rounded-xl text-xs border border-slate-700 transition-colors cursor-pointer"
-                >
-                  <QrCode className="w-4 h-4" />
-                  <span>Barcode Admin (ADMIN123)</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Form Buat Kode Guru Baru */}
-          <form
-            onSubmit={handleCreateCodeSubmit}
-            className="p-4 bg-white border border-slate-200/90 rounded-2xl shadow-xs space-y-3"
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-xs uppercase tracking-wide text-slate-800 flex items-center gap-1.5">
-                <KeyRound className="w-3.5 h-3.5 text-amber-500" />
-                <span>Tambah Kode Login Guru / Admin Baru</span>
-              </h3>
-              <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                Otomatis ke Firebase
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                  Kode Akses:
-                </label>
-                <input
-                  type="text"
-                  value={newCodeInput}
-                  onChange={(e) => setNewCodeInput(e.target.value.toUpperCase())}
-                  placeholder="Misal: GURU7A"
-                  required
-                  className="w-full px-3 py-2 text-xs uppercase font-mono font-bold tracking-wider rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                  Nama Guru:
-                </label>
-                <input
-                  type="text"
-                  value={newTeacherName}
-                  onChange={(e) => setNewTeacherName(e.target.value)}
-                  placeholder="Nama Lengkap & Gelar"
-                  required
-                  className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                  Peran:
-                </label>
-                <select
-                  value={newRole}
-                  onChange={(e) => setNewRole(e.target.value as 'teacher' | 'admin')}
-                  className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50"
-                >
-                  <option value="teacher">Guru Pembina</option>
-                  <option value="admin">Administrator</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-1">
-              <button
-                type="submit"
-                disabled={isSavingCode}
-                className="w-full sm:w-auto flex items-center justify-center space-x-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Simpan Kode & Buat Barcode</span>
-              </button>
-            </div>
-          </form>
-
-          {/* Daftar Kode Login Aktif & Barcode Guru */}
+          {/* Daftar Kode Login Guru & Barcode Guru */}
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs divide-y divide-slate-100 overflow-hidden">
             <div className="p-3 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between text-xs font-bold text-slate-700">
               <span>Daftar Guru & Kode Akses ({teacherCodes.length})</span>
@@ -1559,13 +1486,15 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
               return (
                 <div key={tc.id} className="p-3 flex items-center justify-between gap-2 hover:bg-slate-50/60 transition-colors">
                   <div className="flex items-center space-x-2.5 min-w-0">
-                    <span className="font-mono font-bold text-xs bg-slate-100 text-slate-800 px-2 py-1 rounded-lg border border-slate-200 shrink-0">
-                      {tc.code}
-                    </span>
                     <div className="min-w-0">
                       <div className="text-xs font-bold text-slate-900 truncate">{tc.name}</div>
-                      <div className="text-[10px] text-slate-500 capitalize">
-                        {tc.role === 'admin' ? 'Administrator' : 'Guru Pembina'}
+                      <div className="flex items-center space-x-2 mt-0.5">
+                        <span className="font-mono font-bold text-[10px] bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded-md border border-slate-200 shrink-0">
+                          {tc.code}
+                        </span>
+                        <span className="text-[10px] text-slate-500 capitalize">
+                          {tc.role === 'admin' ? 'Administrator' : 'Guru Pembina'}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -1613,21 +1542,307 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
               );
             })}
           </div>
+
+          {/* Form Buat Kode Guru Baru */}
+          <form
+            onSubmit={handleCreateCodeSubmit}
+            className="p-4 bg-white border border-slate-200/90 rounded-2xl shadow-xs space-y-3"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-xs uppercase tracking-wide text-slate-800 flex items-center gap-1.5">
+                <KeyRound className="w-3.5 h-3.5 text-amber-500" />
+                <span>Tambah Guru</span>
+              </h3>
+              <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                Otomatis ke Firebase
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                  Nama Guru:
+                </label>
+                <input
+                  type="text"
+                  value={newTeacherName}
+                  onChange={(e) => setNewTeacherName(e.target.value)}
+                  placeholder="Nama Lengkap & Gelar"
+                  required
+                  className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                  Kode Akses:
+                </label>
+                <input
+                  type="text"
+                  value={newCodeInput}
+                  onChange={(e) => setNewCodeInput(e.target.value.toUpperCase())}
+                  placeholder="Misal: GURU7A"
+                  required
+                  className="w-full px-3 py-2 text-xs uppercase font-mono font-bold tracking-wider rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                  Peran:
+                </label>
+                <select
+                  value={newRole}
+                  onChange={(e) => setNewRole(e.target.value as 'teacher' | 'admin')}
+                  className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50"
+                >
+                  <option value="teacher">Guru Pembina</option>
+                  <option value="admin">Administrator</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="submit"
+                disabled={isSavingCode}
+                className="w-full sm:w-auto flex items-center justify-center space-x-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Simpan Kode & Buat Barcode</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* TAB: JADWAL PENGAKTIFAN PERTEMUAN */}
+      {activeTab === 'schedule' && (
+        <div className="space-y-4 animate-fadeIn">
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-purple-800 to-indigo-900 rounded-2xl p-4 text-white shadow-md">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center shrink-0 border border-purple-500/30">
+                <Calendar className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-black leading-tight">
+                  Jadwal Pengaktifan Penilaian Pertemuan
+                </h3>
+                <p className="text-xs text-purple-200 mt-1">
+                  Atur tanggal aktif untuk masing-masing dari 20 pertemuan. Guru hanya dapat melakukan penilaian sikap pada tanggal aktif yang ditentukan untuk pertemuan tersebut.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Minimal Grid of 20 boxes */}
+          <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+            {Array.from({ length: 20 }, (_, idx) => {
+              const meetingNum = idx + 1;
+              const sched = schedules.find((s) => s.meetingNumber === meetingNum);
+              const activeDate = sched?.activeDate || '';
+
+              // Format date nicely for Indonesian display if valid
+              let displayDate = 'Belum Diaktifkan';
+              if (activeDate) {
+                const parts = activeDate.split('-');
+                if (parts.length === 3) {
+                  const months = [
+                    'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+                    'Jul', 'Agt', 'Sep', 'Okt', 'Nov', 'Des'
+                  ];
+                  const day = parseInt(parts[2], 10);
+                  const monthIdx = parseInt(parts[1], 10) - 1;
+                  const year = parts[0];
+                  if (monthIdx >= 0 && monthIdx < 12) {
+                    displayDate = `${day} ${months[monthIdx]} ${year}`;
+                  } else {
+                    displayDate = activeDate;
+                  }
+                } else {
+                  displayDate = activeDate;
+                }
+              }
+
+              const isEditing = editingScheduleId === `meeting-${meetingNum}`;
+
+              return (
+                <div
+                  key={meetingNum}
+                  className={`bg-white rounded-2xl border transition-all p-3.5 flex flex-col justify-between items-center text-center space-y-2 relative shadow-xs ${
+                    activeDate
+                      ? 'border-purple-300 bg-purple-50/20 ring-1 ring-purple-100'
+                      : 'border-slate-200 hover:border-purple-300'
+                  }`}
+                >
+                  <div className="text-slate-400 font-bold text-[10px] uppercase tracking-wider">
+                    Pertemuan {meetingNum}
+                  </div>
+
+                  {isEditing ? (
+                    <div className="w-full space-y-2 pt-1 z-10 bg-white p-2 rounded-xl border border-purple-200 absolute inset-x-0 top-0 shadow-lg">
+                      <input
+                        type="date"
+                        value={tempActiveDate}
+                        onChange={(e) => setTempActiveDate(e.target.value)}
+                        className="w-full px-2 py-1 text-xs rounded-lg border border-slate-300 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      />
+                      <div className="grid grid-cols-2 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingScheduleId(null);
+                          }}
+                          className="py-1 px-1 text-[10px] font-bold text-slate-500 hover:bg-slate-100 rounded-md cursor-pointer"
+                        >
+                          Batal
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (onSaveSchedule) {
+                              await onSaveSchedule({
+                                id: `meeting-${meetingNum}`,
+                                meetingNumber: meetingNum,
+                                activeDate: tempActiveDate,
+                              });
+                              setEditingScheduleId(null);
+                              setSuccessMessage(`Pertemuan ${meetingNum} berhasil diaktifkan pada tanggal ${tempActiveDate}.`);
+                              setTimeout(() => setSuccessMessage(''), 3000);
+                            }
+                          }}
+                          className="py-1 px-1 text-[10px] font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-md cursor-pointer"
+                        >
+                          Simpan
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (onSaveSchedule) {
+                            await onSaveSchedule({
+                              id: `meeting-${meetingNum}`,
+                              meetingNumber: meetingNum,
+                              activeDate: '',
+                            });
+                            setEditingScheduleId(null);
+                            setSuccessMessage(`Jadwal Pertemuan ${meetingNum} dinonaktifkan.`);
+                            setTimeout(() => setSuccessMessage(''), 3000);
+                          }
+                        }}
+                        className="w-full text-center text-[9px] text-rose-600 hover:underline pt-1 font-semibold cursor-pointer"
+                      >
+                        Matikan Jadwal
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingScheduleId(`meeting-${meetingNum}`);
+                        setTempActiveDate(activeDate || new Date().toISOString().split('T')[0]);
+                      }}
+                      className="w-full flex flex-col items-center justify-center cursor-pointer group"
+                    >
+                      <div
+                        className={`text-xs font-black tracking-tight leading-tight px-2.5 py-1 rounded-xl transition-all ${
+                          activeDate
+                            ? 'bg-purple-100 text-purple-900 font-extrabold shadow-2xs group-hover:scale-105'
+                            : 'bg-slate-50 text-slate-400 group-hover:bg-purple-50 group-hover:text-purple-700'
+                        }`}
+                      >
+                        {displayDate}
+                      </div>
+                      <div className="text-[9px] text-slate-400 mt-2 opacity-0 group-hover:opacity-100 transition-opacity font-bold uppercase tracking-wider">
+                        Atur Tanggal
+                      </div>
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
       {/* TAB 4: DATABASE & GRAFIK PENGGUNAAN KUOTA (1 GB) */}
       {activeTab === 'database' && (
-        <DatabaseUsageView
-          students={students}
-          classes={classes}
-          teacherCodes={teacherCodes}
-          firebaseConnected={firebaseConnected}
-          onClearStudents={onClearStudents}
-          onClearTeacherCodes={onClearTeacherCodes}
-          onResetDatabase={onResetDatabase}
-          onDeduplicateStudents={onDeduplicateStudents}
-        />
+        <div className="space-y-4 animate-fadeIn">
+          <DatabaseUsageView
+            students={students}
+            classes={classes}
+            teacherCodes={teacherCodes}
+            firebaseConnected={firebaseConnected}
+            onClearStudents={onClearStudents}
+            onClearTeacherCodes={onClearTeacherCodes}
+            onResetDatabase={onResetDatabase}
+            onDeduplicateStudents={onDeduplicateStudents}
+          />
+
+          {/* CARD: LOG PERUBAHAN DATA SISTEM */}
+          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <h3 className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide flex items-center space-x-1">
+                  <span>Log Perubahan Data Sistem</span>
+                  <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1.5 py-0.2 rounded-full font-bold">Real-time</span>
+                </h3>
+              </div>
+              <span className="text-[10px] font-bold text-slate-500">
+                {systemLogs.length} Aktivitas Terbaru
+              </span>
+            </div>
+
+            {systemLogs.length > 0 ? (
+              <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1 divide-y divide-slate-100/70">
+                {systemLogs.map((log) => {
+                  let badgeColor = "bg-slate-100 text-slate-800 border-slate-200";
+                  if (log.action.includes("TAMBAH")) badgeColor = "bg-emerald-50 text-emerald-800 border-emerald-200";
+                  else if (log.action.includes("EDIT") || log.action.includes("UPDATE")) badgeColor = "bg-blue-50 text-blue-800 border-blue-200";
+                  else if (log.action.includes("HAPUS") || log.action.includes("BERSIHKAN")) badgeColor = "bg-rose-50 text-rose-800 border-rose-200";
+                  else if (log.action.includes("SINKRONISASI")) badgeColor = "bg-amber-50 text-amber-800 border-amber-200";
+                  else if (log.action.includes("RESET")) badgeColor = "bg-purple-50 text-purple-800 border-purple-200";
+
+                  // Format timestamp elegantly
+                  let timeStr = "";
+                  try {
+                    const d = new Date(log.timestamp);
+                    timeStr = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + " - " + d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+                  } catch (e) {
+                    timeStr = log.timestamp;
+                  }
+
+                  return (
+                    <div key={log.id} className="pt-2.5 first:pt-0 flex items-start justify-between gap-3 text-xs leading-relaxed">
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex items-center flex-wrap gap-1.5">
+                          <span className={`px-2 py-0.5 rounded-md border text-[9px] font-black uppercase tracking-wider ${badgeColor}`}>
+                            {log.action}
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-500">
+                            Oleh: <strong className="text-slate-800">{log.operator}</strong>
+                          </span>
+                        </div>
+                        <p className="text-slate-700 font-bold break-all">
+                          {log.description}
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-400 shrink-0 whitespace-nowrap text-right pt-0.5">
+                        {timeStr}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-8 text-center text-slate-400 text-xs font-semibold bg-slate-50 rounded-xl border border-slate-100">
+                Belum ada catatan aktivitas perubahan sistem.
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* MODAL TAMBAH / EDIT SISWA */}
@@ -1828,6 +2043,186 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
           setSelectedStudentForBarcode(null);
         }}
       />
+
+      {/* Modal Popup Rekap Penilaian Siswa saat Nama / Kartu Di-tap */}
+      {selectedStudentForModal &&
+        createPortal(
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 bg-slate-900/75 backdrop-blur-xs animate-fadeIn">
+            <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-slate-200 p-4 sm:p-5 relative space-y-3 my-auto max-h-[90vh] overflow-y-auto">
+              {/* Close button */}
+              <button
+                type="button"
+                onClick={() => setSelectedStudentForModal(null)}
+                className="absolute right-3 top-3 w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              {/* Header Modal Ringkas */}
+              <div className="pr-7 space-y-0.5">
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200 inline-block">
+                  {selectedStudentForModal.className}
+                </span>
+                <h3 className="text-base sm:text-lg font-black text-slate-900 truncate leading-tight pt-0.5">
+                  {selectedStudentForModal.name}
+                </h3>
+              </div>
+
+              {/* Kotak Nilai Ringkas dengan Warna Sesuai Nilai */}
+              {(() => {
+                const meetingScores = selectedStudentForModal.meetingScores || [];
+                const validScores = meetingScores.filter(
+                  (s): s is number => typeof s === 'number' && s !== null
+                );
+                const effectiveValidScores =
+                  validScores.length > 0 ? validScores : [selectedStudentForModal.score];
+                const avgScore = Math.round(
+                  effectiveValidScores.reduce((sum, val) => sum + val, 0) / effectiveValidScores.length
+                );
+
+                const style = getScoreColorScheme(avgScore);
+                const quote = getQuoteForScore(
+                  avgScore,
+                  selectedStudentForModal.nisn || selectedStudentForModal.id
+                );
+
+                return (
+                  <div className="space-y-2.5">
+                    {/* Ringkasan Nilai Rata-rata Akhir */}
+                    <div className={`p-3 rounded-2xl text-center border shadow-2xs ${style.card}`}>
+                      <div className="text-[10px] font-bold uppercase tracking-wider opacity-90">
+                        Nilai Rata-Rata Akhir
+                      </div>
+                      <div className="text-3xl font-black tracking-tight my-0.5">
+                        {avgScore}
+                      </div>
+                      <div className="text-[10px] font-extrabold uppercase tracking-wider">
+                        Predikat: {style.predicate}
+                      </div>
+                    </div>
+
+                    {/* REKAP NILAI SEMUA PERTEMUAN (1 s.d. 20) */}
+                    <div className="bg-slate-50 p-2.5 rounded-2xl border border-slate-200/80 space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px] font-extrabold text-slate-800">
+                        <span>Tap Pertemuan (1 - 20) Untuk Detail:</span>
+                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.2 rounded-md">
+                          {effectiveValidScores.length} Terisi
+                        </span>
+                      </div>
+
+                      {/* Grid P1 - P20 sebagai tombol interaktif */}
+                      <div className="grid grid-cols-5 gap-1.5 pt-0.5">
+                        {Array.from({ length: 20 }, (_, idx) => {
+                          const meetingNum = idx + 1;
+                          let mScore: number | null = null;
+
+                          if (meetingScores[idx] !== undefined && meetingScores[idx] !== null) {
+                            mScore = meetingScores[idx];
+                          } else if (idx === 0) {
+                            mScore = selectedStudentForModal.score;
+                          }
+
+                          const mStyle = getScoreColorScheme(mScore);
+                          const isSelected = selectedMeetingIndex === idx;
+
+                          return (
+                            <button
+                              key={meetingNum}
+                              type="button"
+                              onClick={() => setSelectedMeetingIndex(idx)}
+                              className={`p-1 rounded-xl border text-center flex flex-col justify-between items-center transition-all cursor-pointer active:scale-95 ${
+                                mStyle.card
+                              } ${
+                                isSelected
+                                  ? 'ring-2 ring-emerald-600 ring-offset-1 font-black scale-105 shadow-md z-10'
+                                  : 'hover:opacity-90'
+                              }`}
+                              title={`Klik untuk lihat catatan Pertemuan ${meetingNum}`}
+                            >
+                              <div className="text-[8px] font-bold uppercase opacity-80 leading-none">
+                                P{meetingNum}
+                              </div>
+                              <div className="text-xs font-black tracking-tight leading-tight my-0.5">
+                                {mScore !== null ? mScore : '-'}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* DETAIL PERTEMUAN YANG DIPILIH */}
+                    {(() => {
+                      const currentMeetingNum = selectedMeetingIndex + 1;
+                      let currentMeetingScore: number | null = null;
+                      if (meetingScores[selectedMeetingIndex] !== undefined && meetingScores[selectedMeetingIndex] !== null) {
+                        currentMeetingScore = meetingScores[selectedMeetingIndex];
+                      } else if (selectedMeetingIndex === 0) {
+                        currentMeetingScore = selectedStudentForModal.score;
+                      }
+
+                      const currentMeetingNote =
+                        selectedStudentForModal.meetingNotes?.[selectedMeetingIndex] ||
+                        (selectedMeetingIndex === 0 && selectedStudentForModal.notes
+                          ? selectedStudentForModal.notes
+                          : null);
+
+                      const currentMeetingQuote =
+                        currentMeetingScore !== null
+                          ? getQuoteForScore(
+                              currentMeetingScore,
+                              (selectedStudentForModal.nisn || selectedStudentForModal.id) + selectedMeetingIndex
+                            )
+                          : null;
+
+                      const currentStyle = getScoreColorScheme(currentMeetingScore);
+
+                      return (
+                        <div className="bg-emerald-50/80 p-3 rounded-2xl border border-emerald-200/80 space-y-1.5 animate-fadeIn">
+                          <div className="flex items-center justify-between border-b border-emerald-200/60 pb-1">
+                            <span className="text-xs font-black text-emerald-950 uppercase tracking-wide">
+                              Detail Pertemuan {currentMeetingNum}
+                            </span>
+                            <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md border ${currentStyle.card}`}>
+                              {currentMeetingScore !== null ? `Nilai: ${currentMeetingScore}` : 'Belum Terisi'}
+                            </span>
+                          </div>
+
+                          {/* Catatan / Apresiasi Pertemuan */}
+                          <div className="space-y-1 pt-0.5">
+                            <div className="flex items-center space-x-1 text-[11px] font-bold text-emerald-900">
+                              <MessageSquare className="w-3 h-3 text-emerald-700 shrink-0" />
+                              <span>Catatan / Evaluasi Pertemuan {currentMeetingNum}:</span>
+                            </div>
+                            <p className="text-[11px] text-slate-800 leading-relaxed font-medium bg-white/80 p-2 rounded-xl border border-emerald-100">
+                              {currentMeetingNote && currentMeetingNote.trim()
+                                ? currentMeetingNote
+                                : currentMeetingQuote
+                                ? `"${currentMeetingQuote}"`
+                                : 'Belum ada catatan untuk pertemuan ini.'}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                );
+              })()}
+
+              {/* Footer Button */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setSelectedStudentForModal(null)}
+                  className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+                >
+                  Tutup Rekap
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

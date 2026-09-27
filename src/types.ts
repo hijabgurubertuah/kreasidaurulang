@@ -35,6 +35,12 @@ export interface TeacherCode {
   createdAt: string;
 }
 
+export interface MeetingSchedule {
+  id: string;
+  meetingNumber: number;
+  activeDate: string; // YYYY-MM-DD or empty
+}
+
 export type UserRole = 'student' | 'teacher' | 'admin' | null;
 
 export interface CurrentUser {
@@ -46,3 +52,12 @@ export interface CurrentUser {
 }
 
 export type ActivePage = 'login' | 'dashboard' | 'class-detail' | 'student-view' | 'admin-portal';
+
+export interface SystemLog {
+  id: string;
+  action: string;
+  description: string;
+  operator: string;
+  timestamp: string;
+}
+

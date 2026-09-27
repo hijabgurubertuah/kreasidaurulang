@@ -12,17 +12,72 @@ import {
   Sparkles,
   X,
   Save,
+  Calendar,
 } from 'lucide-react';
-import { ClassRoom, Student } from '../types';
+import { ClassRoom, Student, MeetingSchedule } from '../types';
 import { exportClassToExcel, getPredicate } from '../utils/excelExport';
 import { getScoreColorScheme } from './StudentPortalView';
+
+const CLASS_GRADIENTS = [
+  // 1. Green (Emerald)
+  {
+    gradient: "from-emerald-500 via-emerald-600 to-teal-800",
+    border: "border-emerald-400/40",
+    glow: "bg-emerald-400/15"
+  },
+  // 2. Purple
+  {
+    gradient: "from-purple-600 via-indigo-600 to-purple-800",
+    border: "border-purple-400/40",
+    glow: "bg-purple-400/15"
+  },
+  // 3. Orange/Yellow/Amber
+  {
+    gradient: "from-amber-500 via-orange-500 to-amber-700",
+    border: "border-amber-400/40",
+    glow: "bg-amber-300/15"
+  },
+  // 4. Blue/Sky
+  {
+    gradient: "from-blue-600 via-sky-600 to-blue-800",
+    border: "border-blue-500/40",
+    glow: "bg-sky-400/15"
+  },
+  // 5. Pink/Rose/Crimson
+  {
+    gradient: "from-rose-500 via-pink-600 to-rose-700",
+    border: "border-rose-400/40",
+    glow: "bg-rose-300/15"
+  },
+  // 6. Teal/Cyan
+  {
+    gradient: "from-teal-500 via-cyan-600 to-teal-800",
+    border: "border-teal-400/40",
+    glow: "bg-teal-400/15"
+  },
+  // 7. Violet/Indigo
+  {
+    gradient: "from-violet-600 via-fuchsia-600 to-violet-800",
+    border: "border-violet-500/40",
+    glow: "bg-violet-400/15"
+  },
+  // 8. Crimson/Red/Orange
+  {
+    gradient: "from-red-500 via-orange-600 to-red-700",
+    border: "border-red-400/40",
+    glow: "bg-red-400/15"
+  }
+];
 
 interface ClassDetailViewProps {
   classroom: ClassRoom;
   students: Student[];
+  classes?: ClassRoom[];
+  schedules?: MeetingSchedule[];
   onBack: () => void;
   onUpdateScore: (studentId: string, newScore: number) => void;
   onUpdateNotes: (studentId: string, notes: string) => void;
+  onUpdateMeetingScore?: (studentId: string, meetingIndex: number, newScore: number, notes?: string) => void;
   hasPendingChanges?: boolean;
   pendingChangesCount?: number;
   onSaveToFirebase?: () => Promise<void>;
@@ -32,9 +87,12 @@ interface ClassDetailViewProps {
 export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
   classroom,
   students,
+  classes = [],
+  schedules = [],
   onBack,
   onUpdateScore,
   onUpdateNotes,
+  onUpdateMeetingScore,
   hasPendingChanges = false,
   pendingChangesCount = 0,
   onSaveToFirebase,
@@ -44,6 +102,34 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   const [tempNotes, setTempNotes] = useState('');
   const [recentUpdatedId, setRecentUpdatedId] = useState<string | null>(null);
+
+  // Active meeting scoring index selection (0 to 19)
+  const [selectedMeetingIndex, setSelectedMeetingIndex] = useState<number>(0);
+
+  // Find index of classroom in classes to match color scheme
+  const colorScheme = useMemo(() => {
+    const classIdx = classes.findIndex((c) => c.id === classroom.id);
+    return CLASS_GRADIENTS[classIdx !== -1 ? classIdx % CLASS_GRADIENTS.length : 0];
+  }, [classes, classroom]);
+
+  // Auto-detect and pre-select today's active meeting on load
+  React.useEffect(() => {
+    if (schedules && schedules.length > 0) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const activeSched = schedules.find((s) => s.activeDate === todayStr);
+      if (activeSched) {
+        setSelectedMeetingIndex(activeSched.meetingNumber - 1);
+      }
+    }
+  }, [schedules]);
+
+  // Determine current active meeting lock status
+  const currentSched = schedules.find((s) => s.meetingNumber === (selectedMeetingIndex + 1));
+  const activeDate = currentSched?.activeDate || '';
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  // Scoring is active if no date is set, OR if today's date matches the active date
+  const isScoringActive = activeDate === '' || activeDate === todayStr;
 
   // Filter students for this class (Sorted Alphabetically A-Z)
   const classStudents = useMemo(() => {
@@ -79,17 +165,53 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
     );
   }, [classStudents, searchQuery]);
 
+  // Get specific meeting score (0 to 19)
+  const getMeetingScore = (student: Student, idx: number): number => {
+    if (student.meetingScores && student.meetingScores[idx] !== undefined && student.meetingScores[idx] !== null) {
+      return student.meetingScores[idx] as number;
+    }
+    // Fallback to student.score for Meeting 1 (idx 0)
+    if (idx === 0) return student.score;
+    return 80; // default value
+  };
+
+  // Get specific meeting notes (0 to 19)
+  const getMeetingNotes = (student: Student, idx: number): string => {
+    if (student.meetingNotes && student.meetingNotes[idx] !== undefined && student.meetingNotes[idx] !== null) {
+      return student.meetingNotes[idx] as string;
+    }
+    if (idx === 0) return student.notes || '';
+    return '';
+  };
+
   // Statistics
   const totalCount = classStudents.length;
   const avgScore =
     totalCount > 0
-      ? Math.round(classStudents.reduce((sum, s) => sum + s.score, 0) / totalCount)
+      ? Math.round(
+          classStudents.reduce(
+            (sum, s) => sum + getMeetingScore(s, selectedMeetingIndex),
+            0
+          ) / totalCount
+        )
       : 0;
 
   const handleScoreChange = (student: Student, delta: number) => {
-    const newScore = Math.max(0, Math.min(100, student.score + delta));
-    if (newScore !== student.score) {
-      onUpdateScore(student.id, newScore);
+    if (!isScoringActive) return; // Prevent edits if locked by schedule
+    
+    const currentMScore = getMeetingScore(student, selectedMeetingIndex);
+    const newScore = Math.max(0, Math.min(100, currentMScore + delta));
+    if (newScore !== currentMScore) {
+      if (onUpdateMeetingScore) {
+        onUpdateMeetingScore(
+          student.id,
+          selectedMeetingIndex,
+          newScore,
+          getMeetingNotes(student, selectedMeetingIndex)
+        );
+      } else {
+        onUpdateScore(student.id, newScore);
+      }
       setRecentUpdatedId(student.id);
       setTimeout(() => {
         setRecentUpdatedId((prev) => (prev === student.id ? null : prev));
@@ -99,18 +221,26 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
 
   const handleOpenNoteModal = (student: Student) => {
     setEditingStudentId(student.id);
-    setTempNotes(student.notes || '');
+    setTempNotes(getMeetingNotes(student, selectedMeetingIndex));
   };
 
   const handleSaveNotes = (studentId: string) => {
-    onUpdateNotes(studentId, tempNotes);
+    const student = students.find((s) => s.id === studentId);
+    if (student) {
+      const currentMScore = getMeetingScore(student, selectedMeetingIndex);
+      if (onUpdateMeetingScore) {
+        onUpdateMeetingScore(studentId, selectedMeetingIndex, currentMScore, tempNotes);
+      } else {
+        onUpdateNotes(studentId, tempNotes);
+      }
+    }
     setEditingStudentId(null);
   };
 
   return (
     <div className="w-full max-w-5xl mx-auto px-3 sm:px-6 py-4 space-y-4 animate-fadeIn">
       {/* Banner Header Hijau Besar untuk Kelas Terpilih */}
-      <div className="bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-800 text-white p-4 sm:p-6 rounded-3xl shadow-md border border-emerald-500/80 flex items-center justify-between gap-3">
+      <div className={`bg-gradient-to-r ${colorScheme.gradient} text-white p-4 sm:p-6 rounded-3xl shadow-md border ${colorScheme.border} flex items-center justify-between gap-3`}>
         <div className="flex items-center space-x-3 min-w-0">
           <button
             type="button"
@@ -123,13 +253,13 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
           </button>
 
           <div className="min-w-0">
-            <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-emerald-200 block mb-0.5 opacity-90">
+            <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-white/80 block mb-0.5 opacity-90">
               PENILAIAN KELAS
             </span>
             <h2 className="text-2xl sm:text-4xl font-black tracking-tight text-white uppercase drop-shadow-xs truncate">
               {classroom.name.toUpperCase()}
             </h2>
-            <p className="text-xs sm:text-sm text-emerald-100 font-medium truncate pt-0.5">
+            <p className="text-xs sm:text-sm text-white/90 font-medium truncate pt-0.5">
               {totalCount} Siswa • Rata-rata Sikap: {avgScore}
             </p>
           </div>
@@ -137,7 +267,7 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
 
         <div className="flex items-center space-x-1.5 shrink-0">
           <div className="flex items-center space-x-1.5 px-3 py-1.5 bg-white/10 backdrop-blur-xs text-white rounded-2xl border border-white/20 text-xs font-extrabold shadow-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
             <span className="hidden sm:inline">Real-time Live</span>
           </div>
         </div>
@@ -161,6 +291,48 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
         </div>
       </div>
 
+      {/* KONTROL PILIH PERTEMUAN UNTUK DINILAI */}
+      <div className="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center space-x-2.5 w-full sm:w-auto">
+          <label className="text-xs sm:text-sm font-extrabold text-slate-800 shrink-0 uppercase tracking-wide">Pilih Pertemuan:</label>
+          <select
+            value={selectedMeetingIndex}
+            onChange={(e) => setSelectedMeetingIndex(Number(e.target.value))}
+            className="flex-1 sm:flex-none px-4 py-2 bg-purple-50 border-2 border-purple-500 rounded-xl text-xs sm:text-sm font-black text-purple-950 shadow-2xs cursor-pointer"
+          >
+            {Array.from({ length: 20 }, (_, idx) => {
+              const meetingNum = idx + 1;
+              return (
+                <option key={meetingNum} value={idx}>
+                  Pertemuan {meetingNum}
+                </option>
+              );
+            })}
+          </select>
+        </div>
+
+        {/* STATUS AKTIF JADWAL PENILAIAN */}
+        <div className="flex items-center space-x-2 self-start sm:self-center">
+          <span className="text-xs font-bold text-slate-500">Status:</span>
+          {isScoringActive ? (
+            <span className="inline-flex items-center space-x-1 px-3 py-1 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full text-xs font-bold animate-pulse">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <span>✓ Penilaian Terbuka & Bisa Diisi</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center space-x-1 px-3 py-1 bg-rose-100 text-rose-800 border border-rose-300 rounded-full text-xs font-bold">
+              <span>Terkunci( Aktif {(() => {
+                const parts = activeDate.split('-');
+                if (parts.length === 3) {
+                  return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD-MM-YYYY format
+                }
+                return activeDate;
+              })()})</span>
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* Search Input */}
       <div className="relative">
         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -177,9 +349,12 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs divide-y divide-slate-100 overflow-hidden">
         {filteredStudents.length > 0 ? (
           filteredStudents.map((student, idx) => {
-            const predicate = getPredicate(student.score);
+            const mScore = getMeetingScore(student, selectedMeetingIndex);
+            const mNotes = getMeetingNotes(student, selectedMeetingIndex);
+            
+            const predicate = getPredicate(mScore);
             const isUpdatedRecently = recentUpdatedId === student.id;
-            const scoreStyle = getScoreColorScheme(student.score);
+            const scoreStyle = getScoreColorScheme(mScore);
 
             return (
               <div
@@ -197,7 +372,7 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
                   <div className="min-w-0 flex-1">
                     <div className="font-bold text-xs sm:text-sm text-slate-900 truncate flex items-center gap-1.5">
                       <span className="truncate">{student.name}</span>
-                      {student.score === 100 && (
+                      {mScore === 100 && (
                         <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 shrink-0">
                           ★ 100
                         </span>
@@ -213,9 +388,9 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
                       </span>
                     </div>
 
-                    {student.notes && (
+                    {mNotes && (
                       <div className="text-[10px] text-slate-500 italic truncate mt-0.5">
-                        "{student.notes}"
+                        "{mNotes}"
                       </div>
                     )}
                   </div>
@@ -232,23 +407,30 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
                   <button
                     type="button"
                     onClick={() => handleOpenNoteModal(student)}
-                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                    title="Tambah Catatan"
+                    disabled={!isScoringActive}
+                    className={`p-1.5 rounded-lg transition-colors ${
+                      !isScoringActive
+                        ? 'text-slate-300 bg-slate-50 cursor-not-allowed'
+                        : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer'
+                    }`}
+                    title={isScoringActive ? 'Tambah Catatan' : 'Terkunci'}
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
                   </button>
 
                   {/* Kontrol Nilai: [▼] Nilai [▲] */}
-                  <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80">
+                  <div className={`flex items-center space-x-1 p-1 rounded-xl border ${
+                    !isScoringActive ? 'bg-slate-50 border-slate-100 opacity-60' : 'bg-slate-100 border-slate-200/80'
+                  }`}>
                     {/* Tombol Panah Bawah (▼) - Merah/Oranye */}
                     <button
                       type="button"
                       onClick={() => handleScoreChange(student, -10)}
-                      disabled={student.score <= 0}
+                      disabled={!isScoringActive || mScore <= 0}
                       aria-label="Kurangi nilai 10"
                       className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-bold text-xs select-none transition-all ${
-                        student.score <= 0
-                          ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-50'
+                        !isScoringActive || mScore <= 0
+                          ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                           : 'bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white shadow-xs cursor-pointer active:scale-90'
                       }`}
                     >
@@ -258,20 +440,20 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
                     {/* Angka Nilai dengan Latar Berwarna Sesuai Tingkat Nilai */}
                     <div
                       className={`w-9 sm:w-11 px-1 py-1 rounded-lg border text-center flex items-center justify-center font-black text-xs sm:text-sm tracking-tight transition-all duration-300 shadow-2xs ${scoreStyle.card}`}
-                      title={`Nilai: ${student.score} (${scoreStyle.predicate})`}
+                      title={`Nilai: ${mScore} (${scoreStyle.predicate})`}
                     >
-                      {student.score}
+                      {mScore}
                     </div>
 
                     {/* Tombol Panah Atas (▲) - Hijau */}
                     <button
                       type="button"
                       onClick={() => handleScoreChange(student, 10)}
-                      disabled={student.score >= 100}
+                      disabled={!isScoringActive || mScore >= 100}
                       aria-label="Tambah nilai 10"
                       className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-bold text-xs select-none transition-all ${
-                        student.score >= 100
-                          ? 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-50'
+                        !isScoringActive || mScore >= 100
+                          ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                           : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-xs cursor-pointer active:scale-90'
                       }`}
                     >

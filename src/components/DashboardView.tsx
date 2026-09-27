@@ -13,6 +13,57 @@ import { ClassRoom, Student } from '../types';
 import { getPredicate } from '../utils/excelExport';
 import { getScoreColorScheme, getQuoteForScore } from './StudentPortalView';
 
+const CLASS_GRADIENTS = [
+  // 1. Green (Emerald)
+  {
+    gradient: "from-emerald-500 via-emerald-600 to-teal-800",
+    border: "border-emerald-400/40",
+    glow: "bg-emerald-400/15"
+  },
+  // 2. Purple
+  {
+    gradient: "from-purple-600 via-indigo-600 to-purple-800",
+    border: "border-purple-400/40",
+    glow: "bg-purple-400/15"
+  },
+  // 3. Orange/Yellow/Amber
+  {
+    gradient: "from-amber-500 via-orange-500 to-amber-700",
+    border: "border-amber-400/40",
+    glow: "bg-amber-300/15"
+  },
+  // 4. Blue/Sky
+  {
+    gradient: "from-blue-600 via-sky-600 to-blue-800",
+    border: "border-blue-500/40",
+    glow: "bg-sky-400/15"
+  },
+  // 5. Pink/Rose/Crimson
+  {
+    gradient: "from-rose-500 via-pink-600 to-rose-700",
+    border: "border-rose-400/40",
+    glow: "bg-rose-300/15"
+  },
+  // 6. Teal/Cyan
+  {
+    gradient: "from-teal-500 via-cyan-600 to-teal-800",
+    border: "border-teal-400/40",
+    glow: "bg-teal-400/15"
+  },
+  // 7. Violet/Indigo
+  {
+    gradient: "from-violet-600 via-fuchsia-600 to-violet-800",
+    border: "border-violet-500/40",
+    glow: "bg-violet-400/15"
+  },
+  // 8. Crimson/Red/Orange
+  {
+    gradient: "from-red-500 via-orange-600 to-red-700",
+    border: "border-red-400/40",
+    glow: "bg-red-400/15"
+  }
+];
+
 interface DashboardViewProps {
   classes: ClassRoom[];
   students: Student[];
@@ -96,6 +147,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       });
   }, [students, selectedClassFilter]);
 
+  // Find color scheme for all-scores banner based on selectedClassFilter
+  const activeClassColorScheme = useMemo(() => {
+    if (!selectedClassFilter) {
+      // Default to the first (emerald) gradient if "Semua Kelas"
+      return CLASS_GRADIENTS[0];
+    }
+    const classIdx = classes.findIndex(
+      (c) => c.name.toLowerCase().trim() === selectedClassFilter.toLowerCase().trim()
+    );
+    return CLASS_GRADIENTS[classIdx !== -1 ? classIdx % CLASS_GRADIENTS.length : 0];
+  }, [classes, selectedClassFilter]);
+
   return (
     <div className="w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-5 space-y-4 animate-fadeIn">
       {/* 2 MAIN TABS ON TEACHER PAGE */}
@@ -130,20 +193,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="pt-2">
           {/* Grid Kelas (2 Kotak Hijau Full Ke Kanan Pada HP) */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
-            {classes.map((cls) => {
+            {classes.map((cls, idx) => {
               // Extract clean class display name (e.g., '7A', '7B', '8A')
               const shortName = cls.name.replace(/^Kelas\s+/i, '').trim();
+              const colorScheme = CLASS_GRADIENTS[idx % CLASS_GRADIENTS.length];
 
               return (
                 <button
                   key={cls.id}
                   type="button"
                   onClick={() => onSelectClass(cls)}
-                  className="w-full aspect-4/3 sm:aspect-square bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 text-white rounded-3xl p-4 flex items-center justify-center shadow-md hover:shadow-xl hover:scale-[1.03] active:scale-95 transition-all duration-200 cursor-pointer border border-emerald-500/40 relative overflow-hidden group"
+                  className={`w-full aspect-4/3 sm:aspect-square bg-gradient-to-br ${colorScheme.gradient} text-white rounded-3xl p-4 flex items-center justify-center shadow-md hover:shadow-xl hover:scale-[1.03] active:scale-95 transition-all duration-200 cursor-pointer border ${colorScheme.border} relative overflow-hidden group`}
                 >
                   {/* Subtle background glow effect */}
                   <div className="absolute inset-0 bg-white/0 group-hover:bg-white/10 transition-colors pointer-events-none" />
-                  <div className="absolute -right-4 -bottom-4 w-20 h-20 bg-white/10 rounded-full blur-xl pointer-events-none" />
+                  <div className={`absolute -right-4 -bottom-4 w-20 h-20 ${colorScheme.glow} rounded-full blur-xl pointer-events-none`} />
 
                   {/* Clean Big Class Text */}
                   <span className="font-black text-2xl sm:text-3xl tracking-tight drop-shadow-xs group-hover:scale-110 transition-transform">
@@ -167,9 +231,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {teacherTab === 'all-scores' && (
         <div className="space-y-4">
           {/* BANNER HIJAU BESAR UNTUK KELAS TERPILIH */}
-          <div className="bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-800 text-white p-4 sm:p-6 rounded-3xl shadow-md border border-emerald-500/80 flex items-center justify-between gap-4">
+          <div className={`bg-gradient-to-r ${activeClassColorScheme.gradient} text-white p-4 sm:p-6 rounded-3xl shadow-md border ${activeClassColorScheme.border} flex items-center justify-between gap-4`}>
             <div>
-              <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-emerald-200 block mb-1 opacity-90">
+              <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-white/80 block mb-1 opacity-90">
                 REKAP
               </span>
               <h2 className="text-2xl sm:text-4xl font-black tracking-tight text-white uppercase drop-shadow-xs">
@@ -178,7 +242,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
             <div className="text-right shrink-0 bg-white/10 backdrop-blur-xs px-3.5 py-2 rounded-2xl border border-white/20">
               <div className="text-2xl sm:text-3xl font-black">{filteredStudents.length}</div>
-              <div className="text-[9px] sm:text-[10px] font-bold text-emerald-100 uppercase tracking-wider">Siswa</div>
+              <div className="text-[9px] sm:text-[10px] font-bold text-white/80 uppercase tracking-wider">Siswa</div>
             </div>
           </div>
 

@@ -294,53 +294,6 @@ export const DatabaseUsageView: React.FC<DatabaseUsageViewProps> = ({
 
   return (
     <div className="space-y-4 animate-fadeIn">
-      {/* Real-time Status Card */}
-      <div className="bg-slate-900 text-white p-4 sm:p-5 rounded-2xl shadow-md border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
-            <Zap className="w-5 h-5 animate-pulse" />
-          </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <h3 className="text-sm sm:text-base font-black text-white">
-                Real-time Database Firebase
-              </h3>
-              <span
-                className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                  firebaseConnected
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                }`}
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    firebaseConnected ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'
-                  }`}
-                />
-                <span>{firebaseConnected ? 'Live Real-time' : 'Menghubungkan...'}</span>
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Sinkronisasi instan multi-perangkat via Firestore WebSocket • Kuota Spark Plan (1 GB Gratis)
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center space-x-3 bg-slate-800/80 px-3 py-2 rounded-xl border border-slate-700/60 text-xs">
-          <div className="text-right">
-            <div className="text-[10px] text-slate-400 uppercase font-bold">Latency Sync</div>
-            <div className="font-mono font-bold text-emerald-400">&lt; 150 ms</div>
-          </div>
-          <div className="w-px h-6 bg-slate-700" />
-          <div className="text-right">
-            <div className="text-[10px] text-slate-400 uppercase font-bold">Total Dokumen</div>
-            <div className="font-mono font-bold text-white">
-              {students.length + classes.length + teacherCodes.length}
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Notifications */}
       {successMsg && (
         <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-800 text-xs font-semibold flex items-center justify-between gap-2 animate-fadeIn">
@@ -407,177 +360,46 @@ export const DatabaseUsageView: React.FC<DatabaseUsageViewProps> = ({
         />
       </div>
 
-      {/* Kartu Penjelasan Kuota Baca & Solusi Hemat */}
-      <div className="bg-amber-50/80 border border-amber-200/90 rounded-2xl p-4 sm:p-5 space-y-3">
-        <div className="flex items-center space-x-2 text-amber-900 font-extrabold text-xs sm:text-sm">
-          <Info className="w-4 h-4 text-amber-700 shrink-0" />
-          <span>Analisis Penggunaan Kuota Baca & Solusi Hemat (Puluhan Guru)</span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-amber-950 leading-relaxed">
-          <div className="bg-white/80 p-3 rounded-xl border border-amber-200/60 space-y-1.5">
-            <h5 className="font-bold text-amber-900 flex items-center space-x-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
-              <span>Mengapa Pembacaan (Reads) Cepat Bertambah?</span>
-            </h5>
-            <p className="text-[11px] text-slate-700">
-              Firestore menggunakan koneksi <strong>Real-time Listener (`onSnapshot`)</strong>. Saat aplikasi dibuka atau di-refresh, Firestore membaca 1x per dokumen siswa (misal 300 siswa = 300 reads). Jika berganti tab atau halaman di-reload berulang kali, listener melakukan pemindaian ulang seluruh data.
-            </p>
-          </div>
-
-          <div className="bg-white/80 p-3 rounded-xl border border-amber-200/60 space-y-1.5">
-            <h5 className="font-bold text-emerald-900 flex items-center space-x-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-              <span>Solusi Hemat Kuota untuk Puluhan Guru:</span>
-            </h5>
-            <ul className="text-[11px] text-slate-700 list-disc list-inside space-y-1">
-              <li><strong>Cache Memory/Browser:</strong> Data otomatis disimpan di browser lokal agar tidak menembak server berkali-kali.</li>
-              <li><strong>Hapus NISN/Kelas Ganda:</strong> Gunakan tombol "Bersihkan NISN & Kelas Ganda" di bawah agar jumlah dokumen yang dibaca lebih sedikit.</li>
-              <li><strong>Hindari Sering Refresh:</strong> Tidak perlu merefresh halaman manual, karena skor siswa akan ter-update otomatis secara real-time.</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      {/* Rincian Struktur Koleksi Database */}
-      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs space-y-3">
-        <div className="flex items-center justify-between">
-          <h4 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center space-x-2">
-            <Layers className="w-4 h-4 text-emerald-600" />
-            <span>Struktur Koleksi Dokumen Aktif di Firebase Firestore</span>
-          </h4>
-          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-            Real-time Live Sync
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between">
-            <div>
-              <div className="text-[11px] text-slate-500 font-semibold">Koleksi "students"</div>
-              <div className="text-sm font-black text-slate-900">{students.length} Siswa</div>
-            </div>
-            <div className="text-right text-[10px] text-slate-500 font-mono">
-              ~{(students.length * 0.28).toFixed(1)} KB
-            </div>
-          </div>
-
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between">
-            <div>
-              <div className="text-[11px] text-slate-500 font-semibold">Koleksi "classes"</div>
-              <div className="text-sm font-black text-slate-900">{classes.length} Kelas</div>
-            </div>
-            <div className="text-right text-[10px] text-slate-500 font-mono">
-              ~{(classes.length * 0.18).toFixed(1)} KB
-            </div>
-          </div>
-
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between">
-            <div>
-              <div className="text-[11px] text-slate-500 font-semibold">Koleksi "teacher_codes"</div>
-              <div className="text-sm font-black text-slate-900">{teacherCodes.length} Kode Login</div>
-            </div>
-            <div className="text-right text-[10px] text-slate-500 font-mono">
-              ~{(teacherCodes.length * 0.15).toFixed(1)} KB
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Pemeliharaan & Utilitas Database */}
-      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <h4 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center space-x-2">
-            <Server className="w-4 h-4 text-slate-700" />
-            <span>Utilitas & Pemeliharaan Database Firebase</span>
-          </h4>
-          <span className="text-[11px] text-slate-400">Tindakan Langsung Real-time</span>
-        </div>
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs space-y-3">
+        <h4 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center space-x-2">
+          <Server className="w-4 h-4 text-slate-700" />
+          <span>Utilitas & Pemeliharaan Database Firebase</span>
+        </h4>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {/* Card 1: Deduplikasi NISN */}
-          <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col justify-between space-y-2">
-            <div>
-              <div className="text-xs font-bold text-slate-900 flex items-center space-x-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Scan & Bersihkan Kelas/NISN Duplikat</span>
-              </div>
-              <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                Memeriksa seluruh database Firebase, menggabungkan data NISN/Kelas ganda, dan menghapus kelas kosong otomatis.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={handleRunDeduplication}
-              disabled={isActionRunning}
-              className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs disabled:opacity-50"
-            >
-              {isActionRunning && actionType === 'deduplicate' ? 'Memindai & Bersihkan...' : 'Bersihkan NISN & Kelas Ganda/Kosong'}
-            </button>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+          {/* Tombol 1: Bersihkan NISN & Kelas Ganda */}
+          <button
+            type="button"
+            onClick={handleRunDeduplication}
+            disabled={isActionRunning}
+            className="flex items-center justify-center space-x-2 py-3 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs disabled:opacity-50"
+          >
+            <Sparkles className="w-4 h-4 shrink-0" />
+            <span>{isActionRunning && actionType === 'deduplicate' ? 'Memindai...' : 'Bersihkan NISN & Kelas Ganda/Kosong'}</span>
+          </button>
 
-          {/* Card 2: Reset ke Bawaan */}
-          <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col justify-between space-y-2">
-            <div>
-              <div className="text-xs font-bold text-slate-900 flex items-center space-x-1.5">
-                <RefreshCw className="w-3.5 h-3.5 text-blue-600" />
-                <span>Reset Database ke Default Modul</span>
-              </div>
-              <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                Mengembalikan 4 kelas dan kode login guru default modul Kokurikuler Daur Ulang SMPN 1 Bengkalis (tanpa data dummy).
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={handleRunReset}
-              disabled={isActionRunning}
-              className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs disabled:opacity-50"
-            >
-              {isActionRunning && actionType === 'reset' ? 'Mereset...' : 'Reset ke Konfigurasi Awal'}
-            </button>
-          </div>
+          {/* Tombol 2: Kosongkan Semua Siswa */}
+          <button
+            type="button"
+            onClick={handleRunClearStudents}
+            disabled={isActionRunning}
+            className="flex items-center justify-center space-x-2 py-3 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs disabled:opacity-50"
+          >
+            <Trash2 className="w-4 h-4 shrink-0" />
+            <span>{isActionRunning && actionType === 'clear-students' ? 'Menghapus...' : 'Kosongkan Semua Siswa'}</span>
+          </button>
 
-          {/* Card 3: Kosongkan Siswa */}
-          <div className="p-3.5 bg-rose-50/50 rounded-xl border border-rose-200 flex flex-col justify-between space-y-2">
-            <div>
-              <div className="text-xs font-bold text-rose-900 flex items-center space-x-1.5">
-                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                <span>Kosongkan Seluruh Data Siswa</span>
-              </div>
-              <p className="text-[11px] text-rose-800 mt-1 leading-relaxed">
-                Menghapus semua {students.length} siswa di Firebase seketika untuk persiapan tahun ajaran baru atau import spreadsheet baru.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={handleRunClearStudents}
-              disabled={isActionRunning}
-              className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs disabled:opacity-50"
-            >
-              {isActionRunning && actionType === 'clear-students' ? 'Menghapus...' : 'Kosongkan Semua Siswa'}
-            </button>
-          </div>
-
-          {/* Card 4: Bersihkan Kode Guru Tambahan */}
-          <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col justify-between space-y-2">
-            <div>
-              <div className="text-xs font-bold text-slate-900 flex items-center space-x-1.5">
-                <Trash2 className="w-3.5 h-3.5 text-slate-600" />
-                <span>Bersihkan Kode Guru</span>
-              </div>
-              <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                Menghapus kode login guru dan hanya mempertahankan akun utama ADMIN123.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={handleRunClearTeachers}
-              disabled={isActionRunning}
-              className="w-full py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs disabled:opacity-50"
-            >
-              {isActionRunning && actionType === 'clear-teachers' ? 'Membersihkan...' : 'Bersihkan Kode Guru Tambahan'}
-            </button>
-          </div>
+          {/* Tombol 3: Bersihkan Kode Guru Tambahan */}
+          <button
+            type="button"
+            onClick={handleRunClearTeachers}
+            disabled={isActionRunning}
+            className="flex items-center justify-center space-x-2 py-3 px-3 bg-slate-700 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs disabled:opacity-50"
+          >
+            <Trash2 className="w-4 h-4 shrink-0" />
+            <span>{isActionRunning && actionType === 'clear-teachers' ? 'Membersihkan...' : 'Bersihkan Kode Guru Tambahan'}</span>
+          </button>
         </div>
       </div>
 
