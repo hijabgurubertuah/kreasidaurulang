@@ -127,11 +127,13 @@ export function parseStudentCsv(csvText: string): ParsedCsvResult {
       score = Math.max(0, Math.min(100, Math.round(score / 10) * 10));
     }
 
-    // Standardize class ID
-    const sanitizedClassName = rawKelas.startsWith('Kelas')
-      ? rawKelas
-      : `Kelas ${rawKelas}`;
-    const classId = `class-${sanitizedClassName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+    // Standardize class name & class ID consistently (e.g. "7A", "Kelas 7A", "kelas 7a" -> id: "class-7a", name: "Kelas 7A")
+    const cleanClassRaw = rawKelas.replace(/^(kelas|class)\s*/i, '').trim();
+    const sanitizedClassName = cleanClassRaw
+      ? (cleanClassRaw.toLowerCase().startsWith('kelas ') ? cleanClassRaw : `Kelas ${cleanClassRaw.toUpperCase()}`)
+      : 'Kelas 7A';
+    const cleanClassKey = (cleanClassRaw.toLowerCase().replace(/[^a-z0-9]/g, '')) || '7a';
+    const classId = `class-${cleanClassKey}`;
 
     if (!classMap.has(classId)) {
       // detect grade if possible

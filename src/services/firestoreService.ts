@@ -506,6 +506,121 @@ export async function batchDeleteStudentsInDb(studentIds: string[]): Promise<num
 }
 
 /**
+ * Delete a class document from Firestore
+ */
+export async function deleteClassInDb(classId: string) {
+  if (!classId) return;
+  try {
+    await deleteDoc(doc(db, CLASSES_COL, classId));
+    recordQuotaUsage({ deletes: 1 });
+  } catch (err) {
+    console.warn('deleteClassInDb failed:', err);
+  }
+}
+
+/**
+ * Scan all class documents in Firestore and merge any duplicate classes (e.g. class-kelas7a and class-7a)
+ */
+export async function deduplicateClassesInDb(): Promise<{
+  mergedClasses: number;
+  removedClassDuplicates: number;
+}> {
+  const snap = await getDocs(collection(db, CLASSES_COL));
+  if (snap.empty) return { mergedClasses: 0, removedClassDuplicates: 0 };
+
+  const groups = new Map<string, { docId: string; data: ClassRoom }[]>();
+  snap.forEach((d) => {
+    const data = d.data() as ClassRoom;
+    const rawName = (data.name || '').toLowerCase().replace(/^(kelas|class)\s*/i, '').replace(/[^a-z0-9]/g, '');
+    const key = rawName || d.id.toLowerCase().replace(/^(class-|kelas-)/i, '').replace(/[^a-z0-9]/g, '');
+    if (!key) return;
+    const list = groups.get(key) || [];
+    list.push({ docId: d.id, data });
+    groups.set(key, list);
+  });
+
+  let removedClassDuplicates = 0;
+  let mergedClasses = 0;
+  const docsToDelete: string[] = [];
+  const docsToUpsert: ClassRoom[] = [];
+
+  for (const [key, list] of groups.entries()) {
+    const standardId = `class-${key}`;
+    const standardName = list[0].data.name.toLowerCase().startsWith('kelas ')
+      ? list[0].data.name
+      : `Kelas ${key.toUpperCase()}`;
+
+    const canonicalClass: ClassRoom = {
+      id: standardId,
+      name: standardName,
+      grade: list[0].data.grade || (key.match(/\d+/) ? key.match(/\d+/)![0] : '7'),
+      homeroomTeacher: list.find((c) => c.data.homeroomTeacher)?.data.homeroomTeacher,
+    };
+
+    docsToUpsert.push(canonicalClass);
+
+    for (const item of list) {
+      if (item.docId !== standardId) {
+        docsToDelete.push(item.docId);
+        removedClassDuplicates++;
+      }
+    }
+    if (list.length > 1) {
+      mergedClasses++;
+    }
+  }
+
+  if (docsToUpsert.length > 0) {
+    const batch = writeBatch(db);
+    for (const cls of docsToUpsert) {
+      batch.set(doc(db, CLASSES_COL, cls.id), cleanObject(cls), { merge: true });
+    }
+    await batch.commit();
+  }
+
+  if (docsToDelete.length > 0) {
+    const batch = writeBatch(db);
+    for (const id of docsToDelete) {
+      batch.delete(doc(db, CLASSES_COL, id));
+    }
+    await batch.commit();
+  }
+
+  return { mergedClasses, removedClassDuplicates };
+}
+
+/**
+ * Remove classes that have zero enrolled students from Firestore
+ */
+export async function clearEmptyClassesInDb(activeClassNames: string[]): Promise<number> {
+  const activeNormalized = new Set(
+    activeClassNames.map((cn) => cn.toLowerCase().replace(/^(kelas|class)\s*/i, '').replace(/[^a-z0-9]/g, ''))
+  );
+
+  const snap = await getDocs(collection(db, CLASSES_COL));
+  if (snap.empty) return 0;
+
+  const toDelete: any[] = [];
+  snap.forEach((d) => {
+    const data = d.data() as ClassRoom;
+    const nameKey = (data.name || '').toLowerCase().replace(/^(kelas|class)\s*/i, '').replace(/[^a-z0-9]/g, '');
+    const idKey = d.id.toLowerCase().replace(/^(class-|kelas-)/i, '').replace(/[^a-z0-9]/g, '');
+    if (!activeNormalized.has(nameKey) && !activeNormalized.has(idKey)) {
+      toDelete.push(d.ref);
+    }
+  });
+
+  if (toDelete.length > 0) {
+    const batch = writeBatch(db);
+    toDelete.forEach((r) => batch.delete(r));
+    await batch.commit();
+    recordQuotaUsage({ deletes: toDelete.length });
+  }
+
+  return toDelete.length;
+}
+
+/**
  * Scan all student documents in Firestore and merge any duplicate NISNs
  */
 export async function deduplicateStudentsInDb(): Promise<{
@@ -528,6 +643,13 @@ export async function deduplicateStudentsInDb(): Promise<{
     list.push({ docId: d.id, data });
     groups.set(nisnKey, list);
   });
+
+  // Also clean up any duplicate classes or empty classes with 0 students
+  try {
+    await deduplicateClassesInDb();
+    const activeClassNames = Array.from(groups.values()).map((list) => list[0].data.className).filter(Boolean);
+    await clearEmptyClassesInDb(activeClassNames);
+  } catch (_) {}
 
   let mergedCount = 0;
   let removedDuplicates = 0;

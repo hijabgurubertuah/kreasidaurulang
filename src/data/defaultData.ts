@@ -7,24 +7,6 @@ export const DEFAULT_CLASSES: ClassRoom[] = [
     grade: '7',
     homeroomTeacher: 'Budi Santoso, S.Pd.',
   },
-  {
-    id: 'class-7b',
-    name: 'Kelas 7B',
-    grade: '7',
-    homeroomTeacher: 'Siti Rahmawati, M.Pd.',
-  },
-  {
-    id: 'class-8a',
-    name: 'Kelas 8A',
-    grade: '8',
-    homeroomTeacher: 'Ahmad Fauzi, S.Si.',
-  },
-  {
-    id: 'class-8b',
-    name: 'Kelas 8B',
-    grade: '8',
-    homeroomTeacher: 'Dewi Lestari, S.Pd.',
-  },
 ];
 
 // Empty list - no dummy students

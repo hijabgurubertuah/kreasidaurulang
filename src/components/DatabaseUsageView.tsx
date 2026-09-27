@@ -520,10 +520,10 @@ export const DatabaseUsageView: React.FC<DatabaseUsageViewProps> = ({
             <div>
               <div className="text-xs font-bold text-slate-900 flex items-center space-x-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Scan & Deduplikasi NISN Ganda</span>
+                <span>Scan & Bersihkan Kelas/NISN Duplikat</span>
               </div>
               <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                Memeriksa seluruh database dan menggabungkan data jika ada nomor NISN yang sama tanpa menghapus nilai terbaru.
+                Memeriksa seluruh database Firebase, menggabungkan data NISN/Kelas ganda, dan menghapus kelas kosong otomatis.
               </p>
             </div>
             <button
