@@ -203,14 +203,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   key={cls.id}
                   type="button"
                   onClick={() => onSelectClass(cls)}
-                  className={`w-full aspect-4/3 sm:aspect-square bg-gradient-to-br ${colorScheme.gradient} text-white rounded-3xl p-4 flex items-center justify-center shadow-md hover:shadow-xl hover:scale-[1.03] active:scale-95 transition-all duration-200 cursor-pointer border ${colorScheme.border} relative overflow-hidden group`}
+                  className={`w-full aspect-[2.3/1] sm:aspect-square bg-gradient-to-br ${colorScheme.gradient} text-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 flex items-center justify-center shadow-lg shadow-slate-950/15 hover:shadow-2xl hover:shadow-slate-950/25 hover:scale-[1.03] active:scale-95 transition-all duration-200 cursor-pointer border-2 border-white relative overflow-hidden group`}
                 >
                   {/* Subtle background glow effect */}
                   <div className="absolute inset-0 bg-white/0 group-hover:bg-white/10 transition-colors pointer-events-none" />
                   <div className={`absolute -right-4 -bottom-4 w-20 h-20 ${colorScheme.glow} rounded-full blur-xl pointer-events-none`} />
 
                   {/* Clean Big Class Text */}
-                  <span className="font-black text-2xl sm:text-3xl tracking-tight drop-shadow-xs group-hover:scale-110 transition-transform">
+                  <span className="font-black text-xl sm:text-3xl tracking-tight drop-shadow-xs group-hover:scale-110 transition-transform">
                     {shortName || cls.name}
                   </span>
                 </button>

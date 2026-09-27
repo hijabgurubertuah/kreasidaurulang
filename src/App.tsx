@@ -576,12 +576,12 @@ export default function App() {
 
       {/* Footer hanya tampil ketika sudah login (kecuali di halaman siswa) */}
       {activePage !== 'login' && activePage !== 'student-view' && (
-        <footer className="bg-slate-900 text-slate-400 py-5 border-t border-slate-800 text-center text-xs">
+        <footer className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-950 text-emerald-200/90 py-5 border-t border-emerald-850/80 text-center text-xs">
           <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-            <div className="flex items-center space-x-2 font-medium">
+            <div className="flex items-center space-x-2 font-bold">
               <span className="italic">By. TIM MODUL KREASI DAUR ULANG</span>
             </div>
-            <div className="text-slate-500 font-medium">
+            <div className="text-emerald-400 font-extrabold">
               SMP Negeri 1 Bengkalis
             </div>
           </div>

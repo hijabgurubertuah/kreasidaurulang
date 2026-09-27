@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ScanLine } from 'lucide-react';
+import { ScanLine, GraduationCap, Leaf, Sparkles, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { Student, TeacherCode, CurrentUser } from '../types';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 
@@ -131,28 +131,93 @@ export const LoginView: React.FC<LoginViewProps> = ({
   };
 
   return (
-    <div className="min-h-screen flex flex-col justify-between items-center px-4 py-8 bg-slate-50">
+    <div className="relative min-h-screen flex flex-col justify-between items-center px-4 py-8 bg-gradient-to-br from-emerald-900 via-teal-950 to-slate-950 text-white overflow-hidden select-none">
+      {/* Styles for slow-floating recycling/particles */}
+      <style>{`
+        @keyframes floatSlow {
+          0% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-30px) rotate(180deg); }
+          100% { transform: translateY(0px) rotate(360deg); }
+        }
+        @keyframes floatFast {
+          0% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-15px) rotate(-90deg); }
+          100% { transform: translateY(0px) rotate(0deg); }
+        }
+        .anim-float-1 { animation: floatSlow 15s ease-in-out infinite; }
+        .anim-float-2 { animation: floatSlow 20s ease-in-out infinite 2s; }
+        .anim-float-3 { animation: floatSlow 25s ease-in-out infinite 4s; }
+        .anim-float-4 { animation: floatFast 12s ease-in-out infinite 1s; }
+        .anim-float-5 { animation: floatFast 18s ease-in-out infinite 3s; }
+      `}</style>
+
+      {/* Floating subtle "waste/recycle" organic particles in background */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-[0.06] z-0">
+        {/* Particle 1: Recycling Logo Icon */}
+        <div className="absolute top-[15%] left-[10%] anim-float-1 text-emerald-400">
+          <RefreshCw className="w-24 h-24 stroke-[1]" />
+        </div>
+        {/* Particle 2: Leaf Icon */}
+        <div className="absolute top-[60%] left-[8%] anim-float-2 text-teal-300">
+          <Leaf className="w-20 h-20 stroke-[1]" />
+        </div>
+        {/* Particle 3: Plastic Bottle Outline Shape */}
+        <div className="absolute top-[25%] right-[12%] anim-float-3 text-cyan-400">
+          <svg className="w-24 h-24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
+            <path d="M12 2v3M9 5h6v3H9V5zm-1 3h8c1 0 2 .5 2 1.5v10c0 1.5-1 2.5-2.5 2.5h-9C5 22 4 21 4 19.5v-10C4 8.5 5 8 6 8h2z" />
+          </svg>
+        </div>
+        {/* Particle 4: Crumpled Can/Paper Shape */}
+        <div className="absolute bottom-[15%] right-[10%] anim-float-4 text-amber-300">
+          <svg className="w-16 h-16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
+            <polygon points="6 2 18 2 20 6 20 18 18 22 6 22 4 18 4 6" />
+            <line x1="4" y1="6" x2="20" y2="6" />
+            <line x1="4" y1="18" x2="20" y2="18" />
+          </svg>
+        </div>
+        {/* Particle 5: Organic Circle Grid */}
+        <div className="absolute top-[45%] left-[45%] anim-float-5 text-slate-300">
+          <Sparkles className="w-14 h-14 stroke-[1]" />
+        </div>
+        {/* Additional organic leaf floating */}
+        <div className="absolute bottom-[40%] right-[35%] anim-float-2 text-emerald-300">
+          <Leaf className="w-16 h-16 stroke-[1] rotate-45" />
+        </div>
+      </div>
+
       {/* Spacer top */}
       <div />
 
-      {/* Main Login Card */}
-      <div className="w-full max-w-sm flex flex-col items-center space-y-5">
-        {/* Judul di atas kolom login */}
-        <div className="text-center px-1 space-y-1">
-          <h1 className="text-xs sm:text-sm md:text-base font-black tracking-tight text-slate-900 leading-snug uppercase">
-            PENILAIAN SIKAP MODUL KOKURIKULER KREASI DAUR ULANG KELAS 7 SMP NEGERI 1 BENGKALIS
+      {/* Main Login Container */}
+      <div className="w-full max-w-sm flex flex-col items-center space-y-6 z-10">
+        {/* Judul di atas kolom login - Multi-line Typographic Hierarchy */}
+        <div className="text-center px-2 space-y-2">
+          <h1 className="font-extrabold tracking-tight leading-none text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-amber-300 uppercase text-3xl sm:text-4xl drop-shadow-md">
+            Penilaian Sikap
           </h1>
+          
+          <h2 className="font-extrabold text-xs sm:text-sm text-emerald-300 tracking-wider uppercase block leading-normal max-w-xs mx-auto">
+            Modul Kokurikuler Kreasi Daur Ulang
+          </h2>
+          
+          <div className="w-10 h-1 bg-amber-400 mx-auto rounded-full my-2 opacity-80" />
+          
+          <h3 className="font-semibold text-xs sm:text-xs text-slate-300 tracking-widest uppercase block">
+            SMP Negeri 1 Bengkalis
+          </h3>
         </div>
 
-        <div className="w-full bg-white rounded-3xl shadow-lg border border-slate-200/90 p-5 sm:p-7 space-y-4">
+        {/* Login Card (Glassmorphism + Neon Border Accents) */}
+        <div className="w-full bg-slate-900/90 backdrop-blur-md rounded-3xl shadow-2xl border border-white/10 p-5 sm:p-7 space-y-4 relative overflow-hidden">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               {/* Keterangan di atas kolom */}
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+              <label className="block text-[10px] font-black text-emerald-300 uppercase tracking-widest mb-2.5">
                 MASUKKAN NISN / KODE LOGIN
               </label>
 
-              <div className="flex items-center space-x-2">
+              {/* UNIFIED INPUT + SCAN BUTTON IN ONE SINGLE FIELD */}
+              <div className="relative flex items-center bg-slate-800/85 rounded-2xl border-2 border-slate-700 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20 overflow-hidden shadow-inner transition-all">
                 <input
                   type="text"
                   value={inputValue}
@@ -160,44 +225,46 @@ export const LoginView: React.FC<LoginViewProps> = ({
                     setInputValue(e.target.value);
                     if (errorMessage) setErrorMessage('');
                   }}
-                  placeholder="NISN / KODE"
+                  placeholder="NISN / KODE AKSES"
                   autoFocus
-                  className="flex-1 px-4 py-3 text-sm font-semibold rounded-2xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 transition-all bg-slate-50/50 uppercase"
+                  className="w-full pl-4 pr-12 py-3.5 text-sm font-black text-white placeholder:text-slate-500 bg-transparent uppercase border-none outline-none focus:outline-none focus:ring-0"
                 />
 
-                {/* Tombol Scan Barcode Kamera Dekat */}
+                {/* Tombol Scan Barcode di satukan di ujung kanan kolom */}
                 <button
                   type="button"
                   onClick={() => setIsScannerOpen(true)}
-                  className="p-3 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded-2xl border border-slate-300 hover:border-emerald-500 transition-all cursor-pointer shrink-0 active:scale-95"
+                  className="absolute right-2 p-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-400 hover:to-teal-500 rounded-xl transition-all cursor-pointer shrink-0 active:scale-90 shadow-sm"
                   title="Scan Barcode / QR Kamera"
                 >
-                  <ScanLine className="w-5 h-5" />
+                  <ScanLine className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
             {errorMessage && (
-              <div className="text-xs text-rose-600 font-semibold px-1">
-                {errorMessage}
+              <div className="text-xs text-rose-400 font-bold px-1 bg-rose-950/40 border border-rose-800/30 py-1.5 rounded-lg flex items-center space-x-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                <span>{errorMessage}</span>
               </div>
             )}
 
-            {/* Tombol Masuk tanpa tanda panah */}
+            {/* Tombol Masuk dengan gradasi modern berwarna-warni */}
             <button
               type="submit"
-              className="w-full py-3 px-4 bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white rounded-2xl font-bold text-sm shadow-md shadow-emerald-700/20 transition-all cursor-pointer active:scale-[0.98]"
+              className="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-amber-500 hover:from-emerald-500 hover:via-teal-500 hover:to-amber-400 active:scale-[0.98] text-slate-950 font-black rounded-2xl text-sm shadow-lg shadow-emerald-500/10 transition-all cursor-pointer active:scale-95"
             >
-              Masuk
+              MASUK KE PORTAL
             </button>
           </form>
         </div>
       </div>
 
       {/* Footer By. TIM MODUL KREASI DAUR ULANG (Kecil dan miring) */}
-      <footer className="text-center pt-8 pb-2">
-        <p className="text-xs text-slate-500 italic">
-          By. TIM MODUL KREASI DAUR ULANG
+      <footer className="text-center pt-8 pb-2 z-10">
+        <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest flex items-center justify-center space-x-1.5">
+          <span>Oleh:</span>
+          <span className="text-emerald-400">Tim Modul Kreasi Daur Ulang</span>
         </p>
       </footer>
 
@@ -210,3 +277,4 @@ export const LoginView: React.FC<LoginViewProps> = ({
     </div>
   );
 };
+
