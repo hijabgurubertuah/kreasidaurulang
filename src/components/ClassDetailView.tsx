@@ -10,6 +10,7 @@ import {
   MessageSquare,
   Sparkles,
   X,
+  Save,
 } from 'lucide-react';
 import { ClassRoom, Student } from '../types';
 import { exportClassToExcel, getPredicate } from '../utils/excelExport';
@@ -20,6 +21,10 @@ interface ClassDetailViewProps {
   onBack: () => void;
   onUpdateScore: (studentId: string, newScore: number) => void;
   onUpdateNotes: (studentId: string, notes: string) => void;
+  hasPendingChanges?: boolean;
+  pendingChangesCount?: number;
+  onSaveToFirebase?: () => Promise<void>;
+  isSavingToFirebase?: boolean;
 }
 
 export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
@@ -28,6 +33,10 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
   onBack,
   onUpdateScore,
   onUpdateNotes,
+  hasPendingChanges = false,
+  pendingChangesCount = 0,
+  onSaveToFirebase,
+  isSavingToFirebase = false,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
@@ -104,16 +113,67 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => exportClassToExcel(classroom, students)}
-          className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer active:scale-95"
-          title={`Unduh Excel ${classroom.name}`}
-        >
-          <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-300" />
-          <span>Ekspor Excel</span>
-        </button>
+        <div className="flex items-center space-x-1.5 shrink-0">
+          {onSaveToFirebase && (
+            <button
+              type="button"
+              onClick={onSaveToFirebase}
+              disabled={isSavingToFirebase || !hasPendingChanges}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer ${
+                hasPendingChanges
+                  ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 ring-2 ring-amber-300/80 active:scale-95'
+                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+              }`}
+              title={
+                hasPendingChanges
+                  ? `Simpan ${pendingChangesCount} perubahan nilai ke Firebase dalam 1 kali batch write.`
+                  : 'Nilai telah tersimpan di Firebase'
+              }
+            >
+              <Save className={`w-3.5 h-3.5 ${isSavingToFirebase ? 'animate-spin' : ''}`} />
+              <span className="hidden xs:inline">
+                {isSavingToFirebase
+                  ? 'Menyimpan...'
+                  : hasPendingChanges
+                  ? `Simpan (${pendingChangesCount})`
+                  : 'Tersimpan'}
+              </span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => exportClassToExcel(classroom, students)}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer active:scale-95"
+            title={`Unduh Excel ${classroom.name}`}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-300" />
+            <span className="hidden xs:inline">Ekspor Excel</span>
+          </button>
+        </div>
       </div>
+
+      {/* Banner Hemat Kuota Tulis Firebase */}
+      {hasPendingChanges && (
+        <div className="p-3 bg-amber-50 border border-amber-300 rounded-2xl text-amber-900 text-xs font-medium flex items-center justify-between gap-2 animate-fadeIn">
+          <div className="flex items-center space-x-2 min-w-0">
+            <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="truncate">
+              Terdapat <strong>{pendingChangesCount} perubahan nilai/catatan</strong> belum disimpan ke Firebase (kuota tulis harian Anda dihemat).
+            </span>
+          </div>
+          {onSaveToFirebase && (
+            <button
+              type="button"
+              onClick={onSaveToFirebase}
+              disabled={isSavingToFirebase}
+              className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs shrink-0 cursor-pointer shadow-xs active:scale-95"
+            >
+              {isSavingToFirebase ? 'Menyimpan...' : 'Simpan Sekarang'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* KPI Ringkas di HP */}
       <div className="grid grid-cols-3 gap-2">

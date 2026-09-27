@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { LoginView } from './components/LoginView';
 import { DashboardView } from './components/DashboardView';
@@ -23,14 +23,17 @@ import {
   listenToStudents,
   listenToClasses,
   listenToTeacherCodes,
-  updateStudentScoreInDb,
-  saveStudentInDb,
-  deleteStudentInDb,
-  batchSyncStudentsAndClasses,
   createTeacherCodeInDb,
   deleteTeacherCodeInDb,
+  getStudentDocId,
+  clearAllStudentsInDb,
+  clearAllTeacherCodesInDb,
+  resetDatabaseToDefaultsInDb,
+  deduplicateStudentsInDb,
+  commitStagedChangesToDb,
 } from './services/firestoreService';
 import { exportAllClassesToExcel } from './utils/excelExport';
+import { CheckCircle2, X } from 'lucide-react';
 
 export default function App() {
   const [classes, setClasses] = useState<ClassRoom[]>(DEFAULT_CLASSES);
@@ -45,6 +48,16 @@ export default function App() {
   const [adminModalTab, setAdminModalTab] = useState<'csv' | 'codes'>('csv');
   const [firebaseConnected, setFirebaseConnected] = useState(false);
 
+  // Staged / Pending Changes State to protect Firebase daily write quota
+  const [modifiedStudentIds, setModifiedStudentIds] = useState<Set<string>>(new Set());
+  const [pendingDeletedStudentIds, setPendingDeletedStudentIds] = useState<Set<string>>(new Set());
+  const [isSavingToFirebase, setIsSavingToFirebase] = useState(false);
+  const [saveSuccessNotification, setSaveSuccessNotification] = useState<string | null>(null);
+  const savedSnapshotRef = useRef<Student[]>(DEFAULT_STUDENTS);
+
+  const pendingChangesCount = modifiedStudentIds.size + pendingDeletedStudentIds.size;
+  const hasPendingChanges = pendingChangesCount > 0;
+
   // Initialize and listen to Firestore
   useEffect(() => {
     let isMounted = true;
@@ -58,10 +71,18 @@ export default function App() {
     const unsubscribeStudents = listenToStudents(
       (updatedStudents) => {
         if (!isMounted) return;
-        if (updatedStudents.length > 0) {
-          setStudents(updatedStudents);
-          setFirebaseConnected(true);
-        }
+        setFirebaseConnected(true);
+        // Only overwrite local state if user has no pending unsaved edits
+        setModifiedStudentIds((currModified) => {
+          setPendingDeletedStudentIds((currDeleted) => {
+            if (currModified.size === 0 && currDeleted.size === 0) {
+              setStudents(updatedStudents);
+              savedSnapshotRef.current = updatedStudents;
+            }
+            return currDeleted;
+          });
+          return currModified;
+        });
       },
       () => setFirebaseConnected(false)
     );
@@ -81,9 +102,7 @@ export default function App() {
     const unsubscribeTeacherCodes = listenToTeacherCodes(
       (updatedCodes) => {
         if (!isMounted) return;
-        if (updatedCodes.length > 0) {
-          setTeacherCodes(updatedCodes);
-        }
+        setTeacherCodes(updatedCodes);
       },
       () => {}
     );
@@ -106,58 +125,213 @@ export default function App() {
     }
   }, [students, currentUser?.identifier, currentUser?.role]);
 
-  // Update score with optimistic local update + Firestore write
+  // Update score with local staging - does NOT write to Firebase until "Simpan ke Firebase" is clicked
   const handleUpdateScore = useCallback(
-    async (studentId: string, newScore: number) => {
+    (studentId: string, newScore: number) => {
       setStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, score: newScore } : s))
       );
-
-      try {
-        await updateStudentScoreInDb(studentId, newScore);
-      } catch (err) {
-        console.warn('Failed to update student score in Firestore:', err);
-      }
+      setModifiedStudentIds((prev) => new Set(prev).add(studentId));
     },
     []
   );
 
-  // Update notes with optimistic local update + Firestore write
+  // Update notes with local staging - does NOT write to Firebase until "Simpan ke Firebase" is clicked
   const handleUpdateNotes = useCallback(
-    async (studentId: string, notes: string) => {
+    (studentId: string, notes: string) => {
       setStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, notes } : s))
       );
-
-      const target = students.find((s) => s.id === studentId);
-      const score = target ? target.score : 80;
-
-      try {
-        await updateStudentScoreInDb(studentId, score, notes);
-      } catch (err) {
-        console.warn('Failed to update student notes in Firestore:', err);
-      }
+      setModifiedStudentIds((prev) => new Set(prev).add(studentId));
     },
-    [students]
+    []
   );
 
-  // Admin student management
-  const handleSaveStudent = async (student: Student) => {
+  // Admin student management - updates if same NISN, stages locally
+  const handleSaveStudent = (student: Student) => {
+    const cleanNisn = student.nisn.trim().toLowerCase();
+    const standardId = getStudentDocId(student.nisn);
+    const standardized: Student = {
+      ...student,
+      id: standardId,
+      nisn: student.nisn.trim(),
+    };
+
     setStudents((prev) => {
-      const idx = prev.findIndex((s) => s.id === student.id);
+      const idx = prev.findIndex(
+        (s) => s.id === standardId || s.nisn.trim().toLowerCase() === cleanNisn
+      );
       if (idx !== -1) {
         const copy = [...prev];
-        copy[idx] = student;
+        copy[idx] = { ...copy[idx], ...standardized };
         return copy;
       }
-      return [student, ...prev];
+      return [standardized, ...prev];
     });
-    await saveStudentInDb(student);
+
+    setModifiedStudentIds((prev) => new Set(prev).add(standardId));
+    setPendingDeletedStudentIds((prev) => {
+      const next = new Set(prev);
+      next.delete(standardId);
+      return next;
+    });
   };
 
-  const handleDeleteStudent = async (studentId: string) => {
+  // Delete single student - stages locally
+  const handleDeleteStudent = (studentId: string) => {
     setStudents((prev) => prev.filter((s) => s.id !== studentId));
-    await deleteStudentInDb(studentId);
+    setPendingDeletedStudentIds((prev) => new Set(prev).add(studentId));
+    setModifiedStudentIds((prev) => {
+      const next = new Set(prev);
+      next.delete(studentId);
+      return next;
+    });
+  };
+
+  // Bulk Delete students - stages locally
+  const handleBulkDeleteStudents = (studentIds: string[]) => {
+    const idsSet = new Set(studentIds);
+    setStudents((prev) => prev.filter((s) => !idsSet.has(s.id)));
+    setPendingDeletedStudentIds((prev) => {
+      const next = new Set(prev);
+      studentIds.forEach((id) => next.add(id));
+      return next;
+    });
+    setModifiedStudentIds((prev) => {
+      const next = new Set(prev);
+      studentIds.forEach((id) => next.delete(id));
+      return next;
+    });
+  };
+
+  // Sync CSV data to state - stages locally with anti-duplication
+  const handleSyncCsvData = async (
+    newStudents: Student[],
+    newClasses: ClassRoom[]
+  ) => {
+    const ids = new Set<string>();
+    setStudents((prev) => {
+      const map = new Map<string, Student>();
+      prev.forEach((s) => map.set(s.nisn.trim().toLowerCase(), s));
+      newStudents.forEach((s) => {
+        const key = s.nisn.trim().toLowerCase();
+        const stdId = getStudentDocId(s.nisn);
+        ids.add(stdId);
+        const existing = map.get(key);
+        if (existing) {
+          map.set(key, { ...existing, ...s, id: stdId });
+        } else {
+          map.set(key, { ...s, id: stdId });
+        }
+      });
+      return Array.from(map.values());
+    });
+
+    if (newClasses.length > 0) {
+      setClasses((prev) => {
+        const map = new Map(prev.map((c) => [c.id, c]));
+        newClasses.forEach((c) => map.set(c.id, c));
+        return Array.from(map.values());
+      });
+    }
+
+    setModifiedStudentIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+
+  // Save all staged changes to Firebase in 1 batch write
+  const handleSaveToFirebase = async () => {
+    if (pendingChangesCount === 0) return;
+    setIsSavingToFirebase(true);
+    try {
+      const studentsToSave = students.filter((s) => modifiedStudentIds.has(s.id));
+      const idsToDelete = Array.from(pendingDeletedStudentIds);
+
+      const res = await commitStagedChangesToDb({
+        upsertStudents: studentsToSave,
+        deletedStudentIds: idsToDelete,
+      });
+
+      setModifiedStudentIds(new Set());
+      setPendingDeletedStudentIds(new Set());
+      savedSnapshotRef.current = [...students];
+
+      setSaveSuccessNotification(
+        `Berhasil menyimpan ${res.writesCount} perubahan ke Firebase dalam 1 kali batch write! Kuota tulis harian Anda tetap hemat.`
+      );
+      setTimeout(() => setSaveSuccessNotification(null), 5000);
+    } catch (err: any) {
+      console.error('Failed to save to Firebase:', err);
+      alert(`Gagal menyimpan ke Firebase: ${err.message}`);
+    } finally {
+      setIsSavingToFirebase(false);
+    }
+  };
+
+  // Discard pending changes and revert to Firestore snapshot
+  const handleDiscardPendingChanges = () => {
+    if (window.confirm('Batalkan semua perubahan yang belum disimpan ke Firebase?')) {
+      setStudents([...savedSnapshotRef.current]);
+      setModifiedStudentIds(new Set());
+      setPendingDeletedStudentIds(new Set());
+      setSaveSuccessNotification('Perubahan lokal dibatalkan. Data dikembalikan ke database cloud.');
+      setTimeout(() => setSaveSuccessNotification(null), 3000);
+    }
+  };
+
+  // Create new Teacher Code
+  const handleCreateTeacherCode = async (newCode: TeacherCode) => {
+    setTeacherCodes((prev) => [...prev, newCode]);
+    await createTeacherCodeInDb(newCode);
+  };
+
+  // Delete Teacher Code
+  const handleDeleteTeacherCode = async (codeId: string) => {
+    setTeacherCodes((prev) => prev.filter((c) => c.id !== codeId));
+    await deleteTeacherCodeInDb(codeId);
+  };
+
+  // Clear all students from Firebase
+  const handleClearAllStudents = async (): Promise<number> => {
+    const count = await clearAllStudentsInDb();
+    setStudents([]);
+    savedSnapshotRef.current = [];
+    setModifiedStudentIds(new Set());
+    setPendingDeletedStudentIds(new Set());
+    return count;
+  };
+
+  // Clear custom teacher codes from Firebase
+  const handleClearTeacherCodes = async (): Promise<number> => {
+    const count = await clearAllTeacherCodesInDb();
+    setTeacherCodes((prev) =>
+      prev.filter((t) => t.code === 'ADMIN123' || t.code === 'GURU123')
+    );
+    return count;
+  };
+
+  // Reset entire database to default
+  const handleResetDatabase = async (): Promise<void> => {
+    await resetDatabaseToDefaultsInDb();
+    setStudents(DEFAULT_STUDENTS);
+    setClasses(DEFAULT_CLASSES);
+    setTeacherCodes(DEFAULT_TEACHER_CODES);
+    savedSnapshotRef.current = DEFAULT_STUDENTS;
+    setModifiedStudentIds(new Set());
+    setPendingDeletedStudentIds(new Set());
+  };
+
+  // Deduplicate students in Firebase
+  const handleDeduplicateStudents = async () => {
+    const result = await deduplicateStudentsInDb();
+    return result;
+  };
+
+  const handleExportAll = () => {
+    exportAllClassesToExcel(classes, students);
   };
 
   // Navigation handlers
@@ -176,15 +350,18 @@ export default function App() {
     if (user.role === 'student') {
       setActivePage('student-view');
     } else if (user.role === 'admin') {
-      // Kode admin123 langsung membuka Portal Admin
       setActivePage('admin-portal');
     } else {
-      // Kode guru123 langsung membuka Dashboard
       setActivePage('dashboard');
     }
   };
 
   const handleLogout = () => {
+    if (hasPendingChanges) {
+      if (!window.confirm('Ada perubahan yang belum disimpan ke Firebase. Apakah Anda yakin ingin keluar?')) {
+        return;
+      }
+    }
     setCurrentUser(null);
     setSelectedClass(null);
     setActivePage('login');
@@ -193,44 +370,6 @@ export default function App() {
   const handleOpenAdminModal = (tab: 'csv' | 'codes' = 'csv') => {
     setAdminModalTab(tab);
     setIsAdminModalOpen(true);
-  };
-
-  // Sync CSV data to Firestore & state
-  const handleSyncCsvData = async (
-    newStudents: Student[],
-    newClasses: ClassRoom[]
-  ) => {
-    setStudents((prev) => {
-      const map = new Map(prev.map((s) => [s.id, s]));
-      newStudents.forEach((s) => map.set(s.id, s));
-      return Array.from(map.values());
-    });
-
-    if (newClasses.length > 0) {
-      setClasses((prev) => {
-        const map = new Map(prev.map((c) => [c.id, c]));
-        newClasses.forEach((c) => map.set(c.id, c));
-        return Array.from(map.values());
-      });
-    }
-
-    await batchSyncStudentsAndClasses(newStudents, newClasses);
-  };
-
-  // Create new Teacher Code
-  const handleCreateTeacherCode = async (newCode: TeacherCode) => {
-    setTeacherCodes((prev) => [...prev, newCode]);
-    await createTeacherCodeInDb(newCode);
-  };
-
-  // Delete Teacher Code
-  const handleDeleteTeacherCode = async (codeId: string) => {
-    setTeacherCodes((prev) => prev.filter((c) => c.id !== codeId));
-    await deleteTeacherCodeInDb(codeId);
-  };
-
-  const handleExportAll = () => {
-    exportAllClassesToExcel(classes, students);
   };
 
   return (
@@ -244,7 +383,28 @@ export default function App() {
           onLogout={handleLogout}
           onExportAll={handleExportAll}
           firebaseConnected={firebaseConnected}
+          hasPendingChanges={hasPendingChanges}
+          pendingChangesCount={pendingChangesCount}
+          onSaveToFirebase={handleSaveToFirebase}
+          isSavingToFirebase={isSavingToFirebase}
         />
+      )}
+
+      {/* Global Toast Notification for Save to Firebase */}
+      {saveSuccessNotification && (
+        <div className="fixed bottom-4 right-4 z-50 max-w-md bg-slate-900 text-white p-3.5 rounded-2xl shadow-2xl border border-emerald-500/40 flex items-center space-x-3 animate-fadeIn">
+          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+          <span className="text-xs font-semibold leading-relaxed flex-1">
+            {saveSuccessNotification}
+          </span>
+          <button
+            type="button"
+            onClick={() => setSaveSuccessNotification(null)}
+            className="text-slate-400 hover:text-white p-1 rounded-lg"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       )}
 
       {/* Main Content Area */}
@@ -257,7 +417,7 @@ export default function App() {
           />
         )}
 
-        {/* Portal Admin (Atur NISN & Kode Guru & CSV) */}
+        {/* Portal Admin (Atur NISN, Kode Guru, CSV & Pembersihan Data) */}
         {activePage === 'admin-portal' && currentUser && currentUser.role === 'admin' && (
           <div className="pb-16 flex-1">
             <AdminPortalView
@@ -267,9 +427,19 @@ export default function App() {
               onBackToDashboard={() => setActivePage('dashboard')}
               onSaveStudent={handleSaveStudent}
               onDeleteStudent={handleDeleteStudent}
+              onBulkDeleteStudents={handleBulkDeleteStudents}
               onCreateTeacherCode={handleCreateTeacherCode}
               onDeleteTeacherCode={handleDeleteTeacherCode}
               onSyncCsvData={handleSyncCsvData}
+              onClearStudents={handleClearAllStudents}
+              onClearTeacherCodes={handleClearTeacherCodes}
+              onResetDatabase={handleResetDatabase}
+              onDeduplicateStudents={handleDeduplicateStudents}
+              hasPendingChanges={hasPendingChanges}
+              pendingChangesCount={pendingChangesCount}
+              onSaveToFirebase={handleSaveToFirebase}
+              isSavingToFirebase={isSavingToFirebase}
+              onDiscardPendingChanges={handleDiscardPendingChanges}
             />
           </div>
         )}
@@ -295,6 +465,10 @@ export default function App() {
               onBack={handleBackToDashboard}
               onUpdateScore={handleUpdateScore}
               onUpdateNotes={handleUpdateNotes}
+              hasPendingChanges={hasPendingChanges}
+              pendingChangesCount={pendingChangesCount}
+              onSaveToFirebase={handleSaveToFirebase}
+              isSavingToFirebase={isSavingToFirebase}
             />
           </div>
         )}
@@ -313,7 +487,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Admin / CSV Sync / Code Management Modal (jika dipanggil dari tombol dashboard) */}
+      {/* Admin / CSV Sync / Code Management Modal */}
       <AdminSyncModal
         isOpen={isAdminModalOpen}
         onClose={() => setIsAdminModalOpen(false)}

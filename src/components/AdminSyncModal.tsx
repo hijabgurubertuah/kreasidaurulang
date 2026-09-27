@@ -103,7 +103,7 @@ export const AdminSyncModal: React.FC<AdminSyncModalProps> = ({
 
       await onSyncCsvData(result.students, result.classes);
       setSyncSuccessMsg(
-        `Berhasil menarik dan menyinkronkan ${result.students.length} siswa ke Firebase Firestore!`
+        `Berhasil memuat ${result.students.length} siswa ke memori lokal. Belum disimpan ke Firebase untuk menghemat kuota tulis harian. Klik tombol "Simpan ke Firebase" untuk menyimpan permanen ke cloud.`
       );
     } catch (err: any) {
       setErrorMessage(err.message || 'Gagal menarik data dari Google Spreadsheet.');

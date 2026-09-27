@@ -6,6 +6,8 @@ import {
   FileSpreadsheet,
   ShieldCheck,
   LayoutDashboard,
+  Save,
+  CheckCircle2,
 } from 'lucide-react';
 import { CurrentUser, ActivePage } from '../types';
 
@@ -16,6 +18,10 @@ interface NavbarProps {
   onLogout: () => void;
   onExportAll: () => void;
   firebaseConnected: boolean;
+  hasPendingChanges?: boolean;
+  pendingChangesCount?: number;
+  onSaveToFirebase?: () => Promise<void>;
+  isSavingToFirebase?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -25,6 +31,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
   onExportAll,
   firebaseConnected,
+  hasPendingChanges = false,
+  pendingChangesCount = 0,
+  onSaveToFirebase,
+  isSavingToFirebase = false,
 }) => {
   return (
     <header className="sticky top-0 z-30 bg-emerald-800 text-white shadow-md">
@@ -87,6 +97,34 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <span className="hidden xs:inline">Kelas</span>
                 </button>
               </div>
+            )}
+
+            {/* Tombol Simpan ke Firebase untuk hemat kuota harian */}
+            {currentUser && currentUser.role !== 'student' && onSaveToFirebase && (
+              <button
+                type="button"
+                onClick={onSaveToFirebase}
+                disabled={isSavingToFirebase || !hasPendingChanges}
+                className={`flex items-center space-x-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all shadow-xs cursor-pointer ${
+                  hasPendingChanges
+                    ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 ring-2 ring-amber-300/80 active:scale-95'
+                    : 'bg-emerald-700/60 text-emerald-200 border border-emerald-600/50 hover:bg-emerald-700'
+                }`}
+                title={
+                  hasPendingChanges
+                    ? `Ada ${pendingChangesCount} perubahan data belum disimpan ke Firebase. Klik untuk menyimpan dan menghemat kuota tulis harian.`
+                    : 'Data telah tersimpan di Firebase'
+                }
+              >
+                <Save className={`w-3.5 h-3.5 ${isSavingToFirebase ? 'animate-spin' : ''}`} />
+                <span>
+                  {isSavingToFirebase
+                    ? 'Menyimpan...'
+                    : hasPendingChanges
+                    ? `Simpan (${pendingChangesCount})`
+                    : 'Tersimpan'}
+                </span>
+              </button>
             )}
 
             {currentUser && currentUser.role !== 'student' && (

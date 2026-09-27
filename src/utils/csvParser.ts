@@ -93,7 +93,7 @@ export function parseStudentCsv(csvText: string): ParsedCsvResult {
     };
   }
 
-  const students: Student[] = [];
+  const studentMap = new Map<string, Student>();
   const classMap = new Map<string, ClassRoom>();
   const errors: string[] = [];
 
@@ -144,23 +144,40 @@ export function parseStudentCsv(csvText: string): ParsedCsvResult {
       });
     }
 
-    const studentId = `std-${nisn.replace(/[^a-zA-Z0-9]/g, '') || `row-${i}`}`;
+    const cleanNisn = nisn.replace(/[^a-zA-Z0-9]/g, '');
+    const studentId = `std-${cleanNisn || `row-${i}`}`;
+    const nisnKey = cleanNisn.toLowerCase();
 
-    students.push({
-      id: studentId,
-      nisn,
-      name,
-      classId,
-      className: sanitizedClassName,
-      score,
-      projectTitle,
-      notes,
-      lastUpdated: new Date().toISOString(),
-    });
+    const existingStudent = studentMap.get(nisnKey);
+    if (existingStudent) {
+      // Jika ada NISN ganda pada file, hanya update data yang ada dan jangan buat duplikasi
+      studentMap.set(nisnKey, {
+        ...existingStudent,
+        name,
+        classId,
+        className: sanitizedClassName,
+        score: rawNilai ? score : existingStudent.score,
+        projectTitle: projectTitle || existingStudent.projectTitle,
+        notes: notes || existingStudent.notes,
+        lastUpdated: new Date().toISOString(),
+      });
+    } else {
+      studentMap.set(nisnKey, {
+        id: studentId,
+        nisn,
+        name,
+        classId,
+        className: sanitizedClassName,
+        score,
+        projectTitle,
+        notes,
+        lastUpdated: new Date().toISOString(),
+      });
+    }
   }
 
   return {
-    students,
+    students: Array.from(studentMap.values()),
     classes: Array.from(classMap.values()),
     errors,
     totalRows: lines.length - 1,

@@ -30,7 +30,7 @@ export const DEFAULT_CLASSES: ClassRoom[] = [
 export const DEFAULT_STUDENTS: Student[] = [
   // Kelas 7A
   {
-    id: 'std-7a-01',
+    id: 'std-0081234001',
     nisn: '0081234001',
     name: 'Aditya Pratama Putra',
     classId: 'class-7a',
@@ -40,7 +40,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Sangat terampil memotong botol dan rajin membersihkan area kerja.',
   },
   {
-    id: 'std-7a-02',
+    id: 'std-0081234002',
     nisn: '0081234002',
     name: 'Aisyah Nur Salsabila',
     classId: 'class-7a',
@@ -50,7 +50,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Inovatif dalam paduan warna dan aktif membantu teman sekelompok.',
   },
   {
-    id: 'std-7a-03',
+    id: 'std-0081234003',
     nisn: '0081234003',
     name: 'Bima Arya Wicaksono',
     classId: 'class-7a',
@@ -60,7 +60,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Fokus dan bertanggung jawab menjaga keselamatan alat kerja.',
   },
   {
-    id: 'std-7a-04',
+    id: 'std-0081234004',
     nisn: '0081234004',
     name: 'Cantika Putri Maharani',
     classId: 'class-7a',
@@ -70,7 +70,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Sikap teladan, kreasi sangat rapi dan ramah lingkungan.',
   },
   {
-    id: 'std-7a-05',
+    id: 'std-0081234005',
     nisn: '0081234005',
     name: 'Dimas Setiawan',
     classId: 'class-7a',
@@ -80,7 +80,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Perlu lebih sabar dalam merapikan tepian plastik.',
   },
   {
-    id: 'std-7a-06',
+    id: 'std-0081234006',
     nisn: '0081234006',
     name: 'Farhan Maulana',
     classId: 'class-7a',
@@ -90,7 +90,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Memahami prinsip daur ulang fungsional untuk tanaman.',
   },
   {
-    id: 'std-7a-07',
+    id: 'std-0081234007',
     nisn: '0081234007',
     name: 'Gita Rahmadani',
     classId: 'class-7a',
@@ -102,7 +102,7 @@ export const DEFAULT_STUDENTS: Student[] = [
 
   // Kelas 7B
   {
-    id: 'std-7b-01',
+    id: 'std-0082345001',
     nisn: '0082345001',
     name: 'Hafiz Al-Fikri',
     classId: 'class-7b',
@@ -112,7 +112,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Teknik linting koran sangat rapi dan simetris.',
   },
   {
-    id: 'std-7b-02',
+    id: 'std-0082345002',
     nisn: '0082345002',
     name: 'Indah Permata Sari',
     classId: 'class-7b',
@@ -122,7 +122,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Kerjasama tim sangat baik, selalu tepat waktu menyelesaikan tahapan.',
   },
   {
-    id: 'std-7b-03',
+    id: 'std-0082345003',
     nisn: '0082345003',
     name: 'Kevin Jonathan',
     classId: 'class-7b',
@@ -132,7 +132,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Rancang bangun detail, menghargai saran teman.',
   },
   {
-    id: 'std-7b-04',
+    id: 'std-0082345004',
     nisn: '0082345004',
     name: 'Larasati Sekar Kinanti',
     classId: 'class-7b',
@@ -142,7 +142,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Disiplin dan bertanggung jawab terhadap kebersihan bengkel karya.',
   },
   {
-    id: 'std-7b-05',
+    id: 'std-0082345005',
     nisn: '0082345005',
     name: 'Muhammad Rizky Ramadhan',
     classId: 'class-7b',
@@ -152,7 +152,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Dibutuhkan pendampingan saat teknik pengeleman.',
   },
   {
-    id: 'std-7b-06',
+    id: 'std-0082345006',
     nisn: '0082345006',
     name: 'Nabila Azzahra',
     classId: 'class-7b',
@@ -164,7 +164,7 @@ export const DEFAULT_STUDENTS: Student[] = [
 
   // Kelas 8A
   {
-    id: 'std-8a-01',
+    id: 'std-0073456001',
     nisn: '0073456001',
     name: 'Oki Kurniawan',
     classId: 'class-8a',
@@ -174,7 +174,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Hati-hati dan menggunakan pengaman saat melubangi kaleng.',
   },
   {
-    id: 'std-8a-02',
+    id: 'std-0073456002',
     nisn: '0073456002',
     name: 'Putri Ayu Wandira',
     classId: 'class-8a',
@@ -184,7 +184,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Pengecatan sangat rapi dengan motif batik Nusantara.',
   },
   {
-    id: 'std-8a-03',
+    id: 'std-0073456003',
     nisn: '0073456003',
     name: 'Raffi Danendra',
     classId: 'class-8a',
@@ -194,7 +194,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Kreativitas tinggi dalam menguji nada dan bunyi.',
   },
   {
-    id: 'std-8a-04',
+    id: 'std-0073456004',
     nisn: '0073456004',
     name: 'Salma Salsabila',
     classId: 'class-8a',
@@ -204,7 +204,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Aktif bertanya dan menjaga ketertiban ruang praktek.',
   },
   {
-    id: 'std-8a-05',
+    id: 'std-0073456005',
     nisn: '0073456005',
     name: 'Teuku Fadhil',
     classId: 'class-8a',
@@ -214,7 +214,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Desain ergonomis dan tepi logam diamplas halus.',
   },
   {
-    id: 'std-8a-06',
+    id: 'std-0073456006',
     nisn: '0073456006',
     name: 'Zahra Amelia',
     classId: 'class-8a',
@@ -226,7 +226,7 @@ export const DEFAULT_STUDENTS: Student[] = [
 
   // Kelas 8B
   {
-    id: 'std-8b-01',
+    id: 'std-0074567001',
     nisn: '0074567001',
     name: 'Alif Bayu Samudra',
     classId: 'class-8b',
@@ -236,7 +236,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Jahitan kuat dan fungsional dipakai belanja sehari-hari.',
   },
   {
-    id: 'std-8b-02',
+    id: 'std-0074567002',
     nisn: '0074567002',
     name: 'Bella Safitri',
     classId: 'class-8b',
@@ -246,7 +246,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Teknik anyam sangat padat, menunjukkan ketekunan prima.',
   },
   {
-    id: 'std-8b-03',
+    id: 'std-0074567003',
     nisn: '0074567003',
     name: 'Fikri Haikal',
     classId: 'class-8b',
@@ -256,7 +256,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Mandiri dan aktif membantu memungut sisa perca di lantai.',
   },
   {
-    id: 'std-8b-04',
+    id: 'std-0074567004',
     nisn: '0074567004',
     name: 'Nadia Khairunnisa',
     classId: 'class-8b',
@@ -266,7 +266,7 @@ export const DEFAULT_STUDENTS: Student[] = [
     notes: 'Kombinasi corak kain harmonis dan estetika tinggi.',
   },
   {
-    id: 'std-8b-05',
+    id: 'std-0074567005',
     nisn: '0074567005',
     name: 'Revan Syahputra',
     classId: 'class-8b',
