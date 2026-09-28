@@ -575,6 +575,57 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     document.body.removeChild(link);
   };
 
+  // Export Data Siswa (Nama, Kelas, NISN) ke CSV dengan preservasi angka 0 di awal NISN
+  const handleExportStudentsToCsv = () => {
+    const studentsToExport = selectedStudentIds.size > 0
+      ? filteredStudents.filter((s) => selectedStudentIds.has(s.id))
+      : filteredStudents;
+
+    if (studentsToExport.length === 0) {
+      setErrorMessage('Tidak ada data siswa untuk diekspor.');
+      return;
+    }
+
+    const classNameLabel = selectedClassFilter || 'Semua_Kelas';
+    // Kolom CSV: Nama, Kelas, NISN
+    const headers = ['Nama', 'Kelas', 'NISN'];
+
+    const rows = studentsToExport.map((st) => {
+      const escapedName = `"${(st.name || '').replace(/"/g, '""')}"`;
+      const escapedClass = `"${(st.className || '').replace(/"/g, '""')}"`;
+
+      // Agar Excel & Google Sheets tidak menghilangkan angka 0 di awal NISN,
+      // kita format sebagai formula text: ="0012345678"
+      const rawNisn = String(st.nisn ?? '').replace(/^['\t]/, '').trim();
+      const escapedNisnVal = rawNisn.replace(/"/g, '""');
+      const formattedNisn = `="` + escapedNisnVal + `"`;
+
+      return [escapedName, escapedClass, formattedNisn].join(',');
+    });
+
+    // Tambahkan UTF-8 BOM (\uFEFF) agar aplikasi spreadsheet membuka file dalam encoding UTF-8 dengan benar
+    const csvContent = [headers.join(','), ...rows].join('\r\n');
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute(
+      'download',
+      `Data_Siswa_${classNameLabel.replace(/\s+/g, '_')}_SMPN_1_Bengkalis.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    setSuccessMessage(
+      `Berhasil mengekspor ${studentsToExport.length} data siswa ke CSV (Nama, Kelas, NISN lengkap dengan awalan angka 0 terjaga)!`
+    );
+    setTimeout(() => setSuccessMessage(''), 4000);
+  };
+
   // Manual File CSV
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1106,6 +1157,19 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                 </button>
               )}
 
+              {/* Tombol Export Data Siswa ke CSV */}
+              <button
+                type="button"
+                onClick={handleExportStudentsToCsv}
+                className="flex items-center justify-center space-x-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer shadow-xs active:scale-95"
+                title="Ekspor data siswa (Nama, Kelas, NISN) ke file CSV dengan format angka 0 terjaga"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-700" />
+                <span>
+                  Export CSV {selectedStudentIds.size > 0 ? `(${selectedStudentIds.size})` : ''}
+                </span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleOpenAddStudent}
@@ -1137,6 +1201,16 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
               </button>
 
               <div className="flex items-center space-x-1.5">
+                <button
+                  type="button"
+                  onClick={handleExportStudentsToCsv}
+                  className="flex items-center space-x-1 px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[11px] font-bold cursor-pointer shadow-xs active:scale-95"
+                  title="Ekspor data siswa ke file CSV"
+                >
+                  <Download className="w-3 h-3 text-emerald-700" />
+                  <span>CSV</span>
+                </button>
+
                 {selectedStudentIds.size > 0 && (
                   <button
                     type="button"
