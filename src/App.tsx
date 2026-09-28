@@ -6,6 +6,7 @@ import { ClassDetailView } from './components/ClassDetailView';
 import { StudentPortalView } from './components/StudentPortalView';
 import { AdminPortalView } from './components/AdminPortalView';
 import { AdminSyncModal } from './components/AdminSyncModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import {
   ClassRoom,
   Student,
@@ -587,6 +588,9 @@ export default function App() {
           </div>
         </footer>
       )}
+
+      {/* Offline Mode Alert */}
+      <OfflineIndicator />
     </div>
   );
 }

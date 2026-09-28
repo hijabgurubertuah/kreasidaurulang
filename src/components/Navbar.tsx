@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  Recycle,
   User,
   LogOut,
   FileSpreadsheet,
@@ -10,6 +9,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { CurrentUser, ActivePage } from '../types';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface NavbarProps {
   currentUser: CurrentUser | null;
@@ -42,8 +42,12 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center justify-between h-16 sm:h-20">
           {/* Logo & Title */}
           <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1 sm:flex-initial">
-            <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-xl bg-emerald-700/80 border border-emerald-500/40 flex items-center justify-center shadow-inner shrink-0">
-              <Recycle className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-300 animate-spin-slow" />
+            <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-xl bg-emerald-900/60 border border-emerald-500/40 flex items-center justify-center p-0.5 shadow-inner shrink-0 overflow-hidden">
+              <img
+                src="https://i.ibb.co.com/nqfqhc29/kdu.png"
+                alt="Logo KDU"
+                className="w-full h-full object-contain"
+              />
             </div>
             <div className="min-w-0 flex flex-col justify-center">
               <div className="flex items-center space-x-2">
@@ -134,6 +138,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               </button>
             )}
+
+            {/* PWA Install Button */}
+            <PWAInstallButton variant="navbar" />
 
             {currentUser && currentUser.role !== 'student' && (
               <button
