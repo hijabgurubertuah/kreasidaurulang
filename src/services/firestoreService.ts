@@ -1143,16 +1143,15 @@ export async function resetAllStudentScoresInDb(
         for (let m = 0; m < 20; m++) {
           if (configuredIndexes.has(m)) {
             const sc = currentScores[m];
-            if (typeof sc === 'number' && sc !== null && sc > 0) {
-              validScores.push(sc);
-            }
+            const effectiveScore = typeof sc === 'number' && sc !== null && sc > 0 ? sc : 80;
+            validScores.push(effectiveScore);
           }
         }
 
         const avgScore =
           validScores.length > 0
             ? Math.round(validScores.reduce((sum, val) => sum + val, 0) / validScores.length)
-            : 0;
+            : 80;
 
         batch.update(d.ref, {
           score: avgScore,

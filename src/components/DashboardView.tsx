@@ -368,16 +368,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 for (let i = 0; i < 20; i++) {
                   const sched = schedules.find((s) => s.meetingNumber === i + 1);
                   const isDateSet = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
-                  if (isDateSet && typeof meetingScores[i] === 'number' && meetingScores[i] !== null && (meetingScores[i] as number) > 0) {
-                    validScores.push(meetingScores[i] as number);
+                  if (isDateSet) {
+                    const raw = meetingScores[i];
+                    const sc = typeof raw === 'number' && raw !== null && (raw as number) > 0 ? (raw as number) : 80;
+                    validScores.push(sc);
                   }
                 }
 
                 const effectiveValidScores =
-                  validScores.length > 0 ? validScores : (selectedStudentForModal.score > 0 ? [selectedStudentForModal.score] : []);
+                  validScores.length > 0 ? validScores : (selectedStudentForModal.score > 0 ? [selectedStudentForModal.score] : [80]);
                 const avgScore = effectiveValidScores.length > 0
                   ? Math.round(effectiveValidScores.reduce((sum, val) => sum + val, 0) / effectiveValidScores.length)
-                  : null;
+                  : 80;
 
                 const style = getScoreColorScheme(avgScore);
                 const quote = avgScore !== null ? getQuoteForScore(
@@ -417,8 +419,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           const isDateSet = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
                           let mScore: number | null = null;
 
-                          if (isDateSet && meetingScores[idx] !== undefined && meetingScores[idx] !== null && meetingScores[idx] > 0) {
-                            mScore = meetingScores[idx];
+                          if (isDateSet) {
+                            const raw = meetingScores[idx];
+                            mScore = raw !== undefined && raw !== null && (raw as number) > 0 ? (raw as number) : 80;
                           }
 
                           const mStyle = getScoreColorScheme(mScore);
@@ -456,8 +459,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       const currentSched = schedules.find((s) => s.meetingNumber === currentMeetingNum);
                       const isCurrentDateSet = Boolean(currentSched?.activeDate && currentSched.activeDate.trim() !== '');
                       let currentMeetingScore: number | null = null;
-                      if (isCurrentDateSet && meetingScores[selectedMeetingIndex] !== undefined && meetingScores[selectedMeetingIndex] !== null && meetingScores[selectedMeetingIndex] > 0) {
-                        currentMeetingScore = meetingScores[selectedMeetingIndex];
+                      if (isCurrentDateSet) {
+                        const raw = meetingScores[selectedMeetingIndex];
+                        currentMeetingScore = raw !== undefined && raw !== null && (raw as number) > 0 ? (raw as number) : 80;
                       }
 
                       const currentMeetingNote =

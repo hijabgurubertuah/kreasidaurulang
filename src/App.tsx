@@ -255,11 +255,13 @@ export default function App() {
           const validScores: number[] = [];
           for (let i = 0; i < 20; i++) {
             const sc = schedules.find((sch) => sch.meetingNumber === i + 1);
-            if (sc?.activeDate && sc.activeDate.trim() !== '' && typeof currentScores[i] === 'number' && currentScores[i] !== null && currentScores[i]! > 0) {
-              validScores.push(currentScores[i] as number);
+            if (sc?.activeDate && sc.activeDate.trim() !== '') {
+              const val = currentScores[i];
+              const effectiveScore = typeof val === 'number' && val !== null && val > 0 ? val : 80;
+              validScores.push(effectiveScore);
             }
           }
-          const avgScore = validScores.length > 0 ? Math.round(validScores.reduce((sum, val) => sum + val, 0) / validScores.length) : newScore;
+          const avgScore = validScores.length > 0 ? Math.round(validScores.reduce((sum, val) => sum + val, 0) / validScores.length) : 80;
 
           return {
             ...s,
@@ -317,16 +319,15 @@ export default function App() {
         for (let m = 0; m < 20; m++) {
           if (configuredIndexes.has(m)) {
             const sc = currentScores[m];
-            if (typeof sc === 'number' && sc !== null && sc > 0) {
-              validScores.push(sc);
-            }
+            const effectiveScore = typeof sc === 'number' && sc !== null && sc > 0 ? sc : 80;
+            validScores.push(effectiveScore);
           }
         }
 
         const avgScore =
           validScores.length > 0
             ? Math.round(validScores.reduce((sum, val) => sum + val, 0) / validScores.length)
-            : 0;
+            : 80;
 
         return {
           ...s,

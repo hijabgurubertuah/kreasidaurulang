@@ -757,16 +757,18 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
       for (let i = 0; i < 20; i++) {
         const sched = schedules.find((s) => s.meetingNumber === i + 1);
         const isDateSet = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
-        if (isDateSet && typeof meetingScores[i] === 'number' && meetingScores[i] !== null && (meetingScores[i] as number) > 0) {
-          validScores.push(meetingScores[i] as number);
+        if (isDateSet) {
+          const raw = meetingScores[i];
+          const sc = typeof raw === 'number' && raw !== null && (raw as number) > 0 ? (raw as number) : 80;
+          validScores.push(sc);
         }
       }
 
       const effectiveValidScores =
-        validScores.length > 0 ? validScores : (st.score > 0 ? [st.score] : []);
+        validScores.length > 0 ? validScores : (st.score > 0 ? [st.score] : [80]);
       const avgScore = effectiveValidScores.length > 0
         ? Math.round(effectiveValidScores.reduce((sum, val) => sum + val, 0) / effectiveValidScores.length)
-        : '-';
+        : 80;
 
       const rowData = [
         String(idx + 1),
@@ -779,8 +781,11 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         let mScore: any = '';
         const sched = schedules.find((s) => s.meetingNumber === i + 1);
         const isDateSet = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
-        if (isDateSet && meetingScores[i] !== undefined && meetingScores[i] !== null && (meetingScores[i] as number) > 0) {
-          mScore = meetingScores[i];
+        if (isDateSet) {
+          mScore =
+            meetingScores[i] !== undefined && meetingScores[i] !== null && (meetingScores[i] as number) > 0
+              ? meetingScores[i]
+              : 80;
         }
         rowData.push(mScore !== '' ? String(mScore) : '-');
       }
@@ -1971,23 +1976,18 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
       {activeTab === 'schedule' && (
         <div className="space-y-4 animate-fadeIn">
           {/* Header Banner */}
-          <div className="bg-gradient-to-r from-purple-800 to-indigo-900 rounded-2xl p-4 sm:p-5 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center space-x-3 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center shrink-0 border border-purple-500/30">
+          <div className="bg-gradient-to-r from-purple-800 to-indigo-900 rounded-2xl p-3.5 sm:p-4 text-white shadow-md flex items-center justify-between gap-3">
+            <div className="flex items-center space-x-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center shrink-0 border border-purple-500/30">
                 <Calendar className="w-5 h-5" />
               </div>
-              <div className="min-w-0">
-                <h3 className="text-sm sm:text-base font-black leading-tight">
-                  Jadwal Pengaktifan Penilaian Pertemuan
-                </h3>
-                <p className="text-xs text-purple-200 mt-1">
-                  Atur tanggal aktif untuk masing-masing dari 20 pertemuan. Penilaian <strong>hanya berlaku pada kolom yang di-set tanggal</strong>.
-                </p>
-              </div>
+              <span className="text-xs sm:text-sm font-black tracking-tight text-white uppercase truncate">
+                Jadwal 20 Pertemuan
+              </span>
             </div>
 
             {/* Tombol Reset Penilaian Siswa */}
-            <div className="flex items-center space-x-2 shrink-0 self-end sm:self-center">
+            <div className="flex items-center space-x-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowResetScoresConfirm(true)}
@@ -1997,27 +1997,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                 <RotateCcw className="w-4 h-4" />
                 <span>Reset Penilaian Siswa</span>
               </button>
-            </div>
-          </div>
-
-          {/* Aturan Pengisian & Keterangan Penilaian */}
-          <div className="bg-amber-50 border border-amber-200/90 rounded-2xl p-3.5 flex items-start space-x-2.5 text-xs text-amber-900">
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <strong className="font-extrabold block text-amber-950">
-                Ketentuan Pengisian Jadwal, Auto-Lock, & Validasi Penilaian:
-              </strong>
-              <ul className="list-disc list-inside space-y-1 text-amber-800 leading-relaxed">
-                <li>
-                  <strong>Auto Terbuka pada Hari H:</strong> Penilaian pertemuan akan terbuka secara otomatis tepat pada tanggal yang telah diatur (hari H), dan <strong>1 hari setelah itu akan terkunci kembali</strong> untuk menjaga keaslian data.
-                </li>
-                <li>
-                  <strong>Hanya Berlaku pada Kolom Berjadwal:</strong> Jika tanggal tidak di-set pada suatu pertemuan, maka diubah bagaimanapun nilai dan catatan <strong>tidak akan tersimpan</strong> ke penilaian.
-                </li>
-                <li>
-                  <strong>Aturan Reset Penilaian:</strong> Tombol <em>Reset Penilaian Siswa</em> hanya akan mereset dan mengosongkan nilai uji coba pada pertemuan yang <strong>belum di-set tanggalnya</strong>. Nilai pada pertemuan yang sudah memiliki tanggal tidak akan ikut tereset.
-                </li>
-              </ul>
             </div>
           </div>
 
@@ -2815,16 +2794,18 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                 for (let i = 0; i < 20; i++) {
                   const sched = schedules.find((s) => s.meetingNumber === i + 1);
                   const isDateSet = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
-                  if (isDateSet && typeof meetingScores[i] === 'number' && meetingScores[i] !== null && (meetingScores[i] as number) > 0) {
-                    validScores.push(meetingScores[i] as number);
+                  if (isDateSet) {
+                    const raw = meetingScores[i];
+                    const sc = typeof raw === 'number' && raw !== null && (raw as number) > 0 ? (raw as number) : 80;
+                    validScores.push(sc);
                   }
                 }
 
                 const effectiveValidScores =
-                  validScores.length > 0 ? validScores : (selectedStudentForModal.score > 0 ? [selectedStudentForModal.score] : []);
+                  validScores.length > 0 ? validScores : (selectedStudentForModal.score > 0 ? [selectedStudentForModal.score] : [80]);
                 const avgScore = effectiveValidScores.length > 0
                   ? Math.round(effectiveValidScores.reduce((sum, val) => sum + val, 0) / effectiveValidScores.length)
-                  : null;
+                  : 80;
 
                 const style = getScoreColorScheme(avgScore);
                 const quote = avgScore !== null ? getQuoteForScore(
@@ -2864,8 +2845,9 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                           const isDateSet = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
                           let mScore: number | null = null;
 
-                          if (isDateSet && meetingScores[idx] !== undefined && meetingScores[idx] !== null && meetingScores[idx] > 0) {
-                            mScore = meetingScores[idx];
+                          if (isDateSet) {
+                            const raw = meetingScores[idx];
+                            mScore = raw !== undefined && raw !== null && (raw as number) > 0 ? (raw as number) : 80;
                           }
 
                           const mStyle = getScoreColorScheme(mScore);
@@ -2903,8 +2885,9 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                       const currentSched = schedules.find((s) => s.meetingNumber === currentMeetingNum);
                       const isCurrentDateSet = Boolean(currentSched?.activeDate && currentSched.activeDate.trim() !== '');
                       let currentMeetingScore: number | null = null;
-                      if (isCurrentDateSet && meetingScores[selectedMeetingIndex] !== undefined && meetingScores[selectedMeetingIndex] !== null && meetingScores[selectedMeetingIndex] > 0) {
-                        currentMeetingScore = meetingScores[selectedMeetingIndex];
+                      if (isCurrentDateSet) {
+                        const raw = meetingScores[selectedMeetingIndex];
+                        currentMeetingScore = raw !== undefined && raw !== null && (raw as number) > 0 ? (raw as number) : 80;
                       }
 
                       const currentMeetingNote =

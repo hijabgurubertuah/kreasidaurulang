@@ -175,10 +175,11 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
     if (!sched || !sched.activeDate || sched.activeDate.trim() === '') {
       return null;
     }
-    if (student.meetingScores && student.meetingScores[idx] !== undefined && student.meetingScores[idx] !== null) {
+    if (student.meetingScores && student.meetingScores[idx] !== undefined && student.meetingScores[idx] !== null && (student.meetingScores[idx] as number) > 0) {
       return student.meetingScores[idx] as number;
     }
-    return null;
+    // Nilai awal semua siswa adalah 80. Jika kunci terbuka dan tidak diubah maka nilainya 80.
+    return 80;
   };
 
   // Get specific meeting notes (0 to 19)
@@ -210,11 +211,8 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
     if (!isScoringActive) return; // Prevent edits if locked by schedule or date not set
     
     const currentMScore = getMeetingScore(student, selectedMeetingIndex);
-    // Baseline starting score when null: 80 for +10, 70 for -10
-    const newScore =
-      currentMScore === null
-        ? (delta > 0 ? 80 : 70)
-        : Math.max(0, Math.min(100, currentMScore + delta));
+    const baseScore = currentMScore !== null ? currentMScore : 80;
+    const newScore = Math.max(0, Math.min(100, baseScore + delta));
 
     if (newScore !== currentMScore) {
       if (onUpdateMeetingScore) {

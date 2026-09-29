@@ -168,15 +168,17 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
     // Penilaian hanya berlaku pada kolom yang di-set tanggal
     const sched = schedules.find((s) => s.meetingNumber === i + 1);
     const isDateConfigured = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
-    if (isDateConfigured && typeof meetingScores[i] === 'number' && meetingScores[i] !== null && (meetingScores[i] as number) > 0) {
-      validScores.push(meetingScores[i] as number);
+    if (isDateConfigured) {
+      const raw = meetingScores[i];
+      const sc = typeof raw === 'number' && raw !== null && (raw as number) > 0 ? (raw as number) : 80;
+      validScores.push(sc);
     }
   }
 
   const totalCompletedMeetings = validScores.length;
   const averageScore = totalCompletedMeetings > 0
     ? Math.round(validScores.reduce((sum, val) => sum + val, 0) / totalCompletedMeetings)
-    : (student.score && student.score > 0 ? student.score : null);
+    : (student.score && student.score > 0 ? student.score : 80);
 
   const heroStyle = getScoreColorScheme(averageScore);
   const selectedQuote = averageScore !== null
@@ -250,8 +252,9 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
             const isDateConfigured = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
             let score: number | null = null;
 
-            if (isDateConfigured && meetingScores[idx] !== undefined && meetingScores[idx] !== null && meetingScores[idx] > 0) {
-              score = meetingScores[idx];
+            if (isDateConfigured) {
+              const raw = meetingScores[idx];
+              score = typeof raw === 'number' && raw !== null && (raw as number) > 0 ? (raw as number) : 80;
             }
 
             const itemStyle = getScoreColorScheme(score);
