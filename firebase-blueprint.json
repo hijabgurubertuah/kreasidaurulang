@@ -1,0 +1,109 @@
+{
+  "entities": {
+    "Student": {
+      "title": "Student",
+      "description": "Represents a student enrolled in the kokurikuler program",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nisn": { "type": "string" },
+        "name": { "type": "string" },
+        "classId": { "type": "string" },
+        "className": { "type": "string" },
+        "score": { "type": "number" },
+        "projectTitle": { "type": "string" },
+        "notes": { "type": "string" },
+        "meetingScores": { "type": "array" },
+        "meetingNotes": { "type": "array" },
+        "lastUpdated": { "type": "string" }
+      },
+      "required": ["id", "nisn", "name", "className"]
+    },
+    "ClassRoom": {
+      "title": "ClassRoom",
+      "description": "Represents a classroom",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "grade": { "type": "string" },
+        "homeroomTeacher": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "TeacherCode": {
+      "title": "TeacherCode",
+      "description": "Access codes for teachers and coordinators",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "assignedClass": { "type": "string" }
+      },
+      "required": ["id", "code", "name", "role"]
+    },
+    "MeetingSchedule": {
+      "title": "MeetingSchedule",
+      "description": "Schedule of module meetings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "meetingNumber": { "type": "number" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "meetingNumber", "title"]
+    },
+    "SystemLog": {
+      "title": "SystemLog",
+      "description": "Audit log for changes in the application",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "action": { "type": "string" },
+        "description": { "type": "string" },
+        "operator": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "action", "timestamp"]
+    },
+    "AppSetting": {
+      "title": "AppSetting",
+      "description": "Configuration settings such as Google Sheets spreadsheet link",
+      "type": "object",
+      "properties": {
+        "url": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/students/{studentId}": {
+      "schema": "Student",
+      "description": "Student score and profile records"
+    },
+    "/classes/{classId}": {
+      "schema": "ClassRoom",
+      "description": "School classes"
+    },
+    "/teacher_codes/{codeId}": {
+      "schema": "TeacherCode",
+      "description": "Teacher and admin access codes"
+    },
+    "/schedules/{scheduleId}": {
+      "schema": "MeetingSchedule",
+      "description": "Meeting schedules"
+    },
+    "/system_logs/{logId}": {
+      "schema": "SystemLog",
+      "description": "Audit logs"
+    },
+    "/app_settings/{settingId}": {
+      "schema": "AppSetting",
+      "description": "App settings including spreadsheet URL"
+    }
+  }
+}

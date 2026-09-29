@@ -9,7 +9,7 @@ import {
   MessageSquare,
   Sparkles,
 } from 'lucide-react';
-import { ClassRoom, Student } from '../types';
+import { ClassRoom, Student, MeetingSchedule } from '../types';
 import { getPredicate } from '../utils/excelExport';
 import { getScoreColorScheme, getQuoteForScore } from './StudentPortalView';
 
@@ -67,6 +67,7 @@ const CLASS_GRADIENTS = [
 interface DashboardViewProps {
   classes: ClassRoom[];
   students: Student[];
+  schedules?: MeetingSchedule[];
   onSelectClass: (classroom: ClassRoom) => void;
   onOpenAdminModal: (defaultTab?: 'csv' | 'codes') => void;
   onUpdateScore?: (studentId: string, newScore: number) => void;
@@ -76,6 +77,7 @@ interface DashboardViewProps {
 export const DashboardView: React.FC<DashboardViewProps> = ({
   classes,
   students,
+  schedules = [],
   onSelectClass,
 }) => {
   // Main 2 Tabs for Teacher Page
@@ -362,20 +364,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {/* Kotak Nilai Ringkas dengan Warna Sesuai Nilai */}
               {(() => {
                 const meetingScores = selectedStudentForModal.meetingScores || [];
-                const validScores = meetingScores.filter(
-                  (s): s is number => typeof s === 'number' && s !== null
-                );
+                const validScores: number[] = [];
+                for (let i = 0; i < 20; i++) {
+                  const sched = schedules.find((s) => s.meetingNumber === i + 1);
+                  const isDateSet = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
+                  if (isDateSet && typeof meetingScores[i] === 'number' && meetingScores[i] !== null && (meetingScores[i] as number) > 0) {
+                    validScores.push(meetingScores[i] as number);
+                  }
+                }
+
                 const effectiveValidScores =
-                  validScores.length > 0 ? validScores : [selectedStudentForModal.score];
-                const avgScore = Math.round(
-                  effectiveValidScores.reduce((sum, val) => sum + val, 0) / effectiveValidScores.length
-                );
+                  validScores.length > 0 ? validScores : (selectedStudentForModal.score > 0 ? [selectedStudentForModal.score] : []);
+                const avgScore = effectiveValidScores.length > 0
+                  ? Math.round(effectiveValidScores.reduce((sum, val) => sum + val, 0) / effectiveValidScores.length)
+                  : null;
 
                 const style = getScoreColorScheme(avgScore);
-                const quote = getQuoteForScore(
+                const quote = avgScore !== null ? getQuoteForScore(
                   avgScore,
                   selectedStudentForModal.nisn || selectedStudentForModal.id
-                );
+                ) : 'Penilaian kokurikuler belum dimulai.';
 
                 return (
                   <div className="space-y-2.5">
@@ -385,10 +393,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         Nilai Rata-Rata Akhir
                       </div>
                       <div className="text-3xl font-black tracking-tight my-0.5">
-                        {avgScore}
+                        {avgScore !== null ? avgScore : '-'}
                       </div>
                       <div className="text-[10px] font-extrabold uppercase tracking-wider">
-                        Predikat: {style.predicate}
+                        Predikat: {avgScore !== null ? style.predicate : 'Belum Dinilai'}
                       </div>
                     </div>
 
@@ -405,12 +413,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <div className="grid grid-cols-5 gap-1.5 pt-0.5">
                         {Array.from({ length: 20 }, (_, idx) => {
                           const meetingNum = idx + 1;
+                          const sched = schedules.find((s) => s.meetingNumber === meetingNum);
+                          const isDateSet = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
                           let mScore: number | null = null;
 
-                          if (meetingScores[idx] !== undefined && meetingScores[idx] !== null) {
+                          if (isDateSet && meetingScores[idx] !== undefined && meetingScores[idx] !== null && meetingScores[idx] > 0) {
                             mScore = meetingScores[idx];
-                          } else if (idx === 0) {
-                            mScore = selectedStudentForModal.score;
                           }
 
                           const mStyle = getScoreColorScheme(mScore);
@@ -445,11 +453,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     {/* DETAIL PERTEMUAN YANG DIPILIH */}
                     {(() => {
                       const currentMeetingNum = selectedMeetingIndex + 1;
+                      const currentSched = schedules.find((s) => s.meetingNumber === currentMeetingNum);
+                      const isCurrentDateSet = Boolean(currentSched?.activeDate && currentSched.activeDate.trim() !== '');
                       let currentMeetingScore: number | null = null;
-                      if (meetingScores[selectedMeetingIndex] !== undefined && meetingScores[selectedMeetingIndex] !== null) {
+                      if (isCurrentDateSet && meetingScores[selectedMeetingIndex] !== undefined && meetingScores[selectedMeetingIndex] !== null && meetingScores[selectedMeetingIndex] > 0) {
                         currentMeetingScore = meetingScores[selectedMeetingIndex];
-                      } else if (selectedMeetingIndex === 0) {
-                        currentMeetingScore = selectedStudentForModal.score;
                       }
 
                       const currentMeetingNote =

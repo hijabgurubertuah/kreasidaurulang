@@ -17,6 +17,7 @@ import {
 import { ClassRoom, Student, MeetingSchedule } from '../types';
 import { exportClassToExcel, getPredicate } from '../utils/excelExport';
 import { getScoreColorScheme } from './StudentPortalView';
+import { getMeetingLockStatus, formatIndonesianDate } from '../utils/scheduleHelper';
 
 const CLASS_GRADIENTS = [
   // 1. Green (Emerald)
@@ -126,10 +127,12 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
   // Determine current active meeting lock status
   const currentSched = schedules.find((s) => s.meetingNumber === (selectedMeetingIndex + 1));
   const activeDate = currentSched?.activeDate || '';
-  const todayStr = new Date().toISOString().split('T')[0];
+  const lockStatus = getMeetingLockStatus(activeDate);
 
-  // Scoring is active if no date is set, OR if today's date matches the active date
-  const isScoringActive = activeDate === '' || activeDate === todayStr;
+  // Penilaian hanya berlaku pada kolom yang di-set tanggal.
+  // Jika tanggal belum diatur atau bukan hari H, maka penilaian terkunci otomatis.
+  const isDateConfigured = lockStatus.isConfigured;
+  const isScoringActive = lockStatus.isOpenToday;
 
   // Filter students for this class (Sorted Alphabetically A-Z)
   const classStudents = useMemo(() => {
@@ -166,41 +169,53 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
   }, [classStudents, searchQuery]);
 
   // Get specific meeting score (0 to 19)
-  const getMeetingScore = (student: Student, idx: number): number => {
+  const getMeetingScore = (student: Student, idx: number): number | null => {
+    // Penilaian hanya berlaku pada kolom yang di-set tanggal
+    const sched = schedules.find((s) => s.meetingNumber === idx + 1);
+    if (!sched || !sched.activeDate || sched.activeDate.trim() === '') {
+      return null;
+    }
     if (student.meetingScores && student.meetingScores[idx] !== undefined && student.meetingScores[idx] !== null) {
       return student.meetingScores[idx] as number;
     }
-    // Fallback to student.score for Meeting 1 (idx 0)
-    if (idx === 0) return student.score;
-    return 80; // default value
+    return null;
   };
 
   // Get specific meeting notes (0 to 19)
   const getMeetingNotes = (student: Student, idx: number): string => {
+    const sched = schedules.find((s) => s.meetingNumber === idx + 1);
+    if (!sched || !sched.activeDate || sched.activeDate.trim() === '') {
+      return '';
+    }
     if (student.meetingNotes && student.meetingNotes[idx] !== undefined && student.meetingNotes[idx] !== null) {
       return student.meetingNotes[idx] as string;
     }
-    if (idx === 0) return student.notes || '';
     return '';
   };
 
   // Statistics
   const totalCount = classStudents.length;
+  const scoredStudents = classStudents
+    .map((s) => getMeetingScore(s, selectedMeetingIndex))
+    .filter((score): score is number => score !== null);
+
   const avgScore =
-    totalCount > 0
+    scoredStudents.length > 0
       ? Math.round(
-          classStudents.reduce(
-            (sum, s) => sum + getMeetingScore(s, selectedMeetingIndex),
-            0
-          ) / totalCount
+          scoredStudents.reduce((sum, s) => sum + s, 0) / scoredStudents.length
         )
       : 0;
 
   const handleScoreChange = (student: Student, delta: number) => {
-    if (!isScoringActive) return; // Prevent edits if locked by schedule
+    if (!isScoringActive) return; // Prevent edits if locked by schedule or date not set
     
     const currentMScore = getMeetingScore(student, selectedMeetingIndex);
-    const newScore = Math.max(0, Math.min(100, currentMScore + delta));
+    // Baseline starting score when null: 80 for +10, 70 for -10
+    const newScore =
+      currentMScore === null
+        ? (delta > 0 ? 80 : 70)
+        : Math.max(0, Math.min(100, currentMScore + delta));
+
     if (newScore !== currentMScore) {
       if (onUpdateMeetingScore) {
         onUpdateMeetingScore(
@@ -225,11 +240,15 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
   };
 
   const handleSaveNotes = (studentId: string) => {
+    if (!isScoringActive) {
+      setEditingStudentId(null);
+      return;
+    }
     const student = students.find((s) => s.id === studentId);
     if (student) {
       const currentMScore = getMeetingScore(student, selectedMeetingIndex);
       if (onUpdateMeetingScore) {
-        onUpdateMeetingScore(studentId, selectedMeetingIndex, currentMScore, tempNotes);
+        onUpdateMeetingScore(studentId, selectedMeetingIndex, currentMScore ?? 80, tempNotes);
       } else {
         onUpdateNotes(studentId, tempNotes);
       }
@@ -281,12 +300,14 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
         </div>
         <div className="bg-white p-2.5 sm:p-3 rounded-2xl border border-slate-200 text-center">
           <div className="text-[10px] text-emerald-700 font-bold uppercase">Rata Sikap</div>
-          <div className="text-base sm:text-xl font-black text-emerald-700 mt-0.5">{avgScore}</div>
+          <div className="text-base sm:text-xl font-black text-emerald-700 mt-0.5">
+            {scoredStudents.length > 0 ? avgScore : '-'}
+          </div>
         </div>
         <div className="bg-white p-2.5 sm:p-3 rounded-2xl border border-slate-200 text-center">
-          <div className="text-[10px] text-teal-700 font-bold uppercase">Nilai 100</div>
+          <div className="text-[10px] text-teal-700 font-bold uppercase">Sudah Dinilai</div>
           <div className="text-base sm:text-xl font-black text-teal-700 mt-0.5">
-            {classStudents.filter((s) => s.score === 100).length}
+            {scoredStudents.length} / {totalCount}
           </div>
         </div>
       </div>
@@ -302,9 +323,12 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
           >
             {Array.from({ length: 20 }, (_, idx) => {
               const meetingNum = idx + 1;
+              const sched = schedules.find((s) => s.meetingNumber === meetingNum);
+              const mDate = sched?.activeDate ? sched.activeDate.trim() : '';
+              const mLock = getMeetingLockStatus(mDate);
               return (
                 <option key={meetingNum} value={idx}>
-                  Pertemuan {meetingNum}
+                  Pertemuan {meetingNum} {mLock.isConfigured ? `(${mLock.formattedDate} • ${mLock.isOpenToday ? 'Buka Hari Ini' : mLock.isPast ? 'Selesai/Terkunci' : 'Mendatang'})` : '(Belum Ada Jadwal)'}
                 </option>
               );
             })}
@@ -314,24 +338,69 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
         {/* STATUS AKTIF JADWAL PENILAIAN */}
         <div className="flex items-center space-x-2 self-start sm:self-center">
           <span className="text-xs font-bold text-slate-500">Status:</span>
-          {isScoringActive ? (
-            <span className="inline-flex items-center space-x-1 px-3 py-1 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full text-xs font-bold animate-pulse">
+          <span
+            className={`inline-flex items-center space-x-1.5 px-3 py-1 border rounded-full text-xs font-bold ${lockStatus.badgeClass}`}
+            title={lockStatus.description}
+          >
+            {lockStatus.isOpenToday && (
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span>✓ Penilaian Terbuka & Bisa Diisi</span>
-            </span>
-          ) : (
-            <span className="inline-flex items-center space-x-1 px-3 py-1 bg-rose-100 text-rose-800 border border-rose-300 rounded-full text-xs font-bold">
-              <span>Terkunci( Aktif {(() => {
-                const parts = activeDate.split('-');
-                if (parts.length === 3) {
-                  return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD-MM-YYYY format
-                }
-                return activeDate;
-              })()})</span>
-            </span>
-          )}
+            )}
+            <span>{lockStatus.statusLabel}</span>
+          </span>
         </div>
       </div>
+
+      {/* Notice jika tanggal belum diatur */}
+      {!isDateConfigured && (
+        <div className="bg-amber-50 border border-amber-200/90 rounded-2xl p-3 flex items-start space-x-2.5 text-xs text-amber-900 shadow-2xs">
+          <span className="text-base">⚠️</span>
+          <div>
+            <strong className="font-extrabold block text-amber-950">Penilaian Terkunci (Tanggal Belum Diatur):</strong>
+            <p className="text-amber-800 leading-relaxed mt-0.5">
+              Pertemuan {selectedMeetingIndex + 1} belum diatur tanggal aktifnya di Tab Jadwal oleh Admin. Sesuai aturan sistem, penilaian hanya berlaku pada kolom yang telah di-set tanggalnya. Pertemuan tanpa tanggal tidak dapat dinilai dan tidak akan pernah tersimpan ke penilaian.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Notice jika tanggal sudah lewat (1 hari setelah jadwal -> terkunci otomatis) */}
+      {isDateConfigured && lockStatus.isPast && (
+        <div className="bg-rose-50 border border-rose-200/90 rounded-2xl p-3 flex items-start space-x-2.5 text-xs text-rose-950 shadow-2xs">
+          <span className="text-base">🔒</span>
+          <div>
+            <strong className="font-extrabold block text-rose-950">Penilaian Terkunci Otomatis (Jadwal Telah Berakhir):</strong>
+            <p className="text-rose-800 leading-relaxed mt-0.5">
+              Jadwal pertemuan ini telah berlangsung pada <strong>{lockStatus.formattedDate}</strong>. Sistem otomatis mengunci kembali penilaian 1 hari setelah tanggal pelaksanaan untuk menjaga keaslian data nilai.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Notice jika tanggal di masa depan (auto terbuka pada tanggal itu) */}
+      {isDateConfigured && lockStatus.isFuture && (
+        <div className="bg-sky-50 border border-sky-200/90 rounded-2xl p-3 flex items-start space-x-2.5 text-xs text-sky-950 shadow-2xs">
+          <span className="text-base">📅</span>
+          <div>
+            <strong className="font-extrabold block text-sky-950">Auto Terbuka Pada {lockStatus.formattedDate}:</strong>
+            <p className="text-sky-800 leading-relaxed mt-0.5">
+              Penilaian pertemuan {selectedMeetingIndex + 1} akan terbuka secara otomatis tepat pada tanggal <strong>{lockStatus.formattedDate}</strong>. Saat ini pengisian nilai masih terkunci.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Notice jika terbuka hari ini */}
+      {isDateConfigured && lockStatus.isOpenToday && (
+        <div className="bg-emerald-50 border border-emerald-200/90 rounded-2xl p-3 flex items-start space-x-2.5 text-xs text-emerald-950 shadow-2xs">
+          <span className="text-base">✨</span>
+          <div>
+            <strong className="font-extrabold block text-emerald-950">Penilaian Terbuka Otomatis (Hari Ini):</strong>
+            <p className="text-emerald-800 leading-relaxed mt-0.5">
+              Hari ini adalah tanggal jadwal Pertemuan {selectedMeetingIndex + 1} ({lockStatus.formattedDate}). Pengisian nilai sikap aktif dan dapat langsung dinilai oleh Guru Pembina.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Search Input */}
       <div className="relative">
@@ -352,7 +421,7 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
             const mScore = getMeetingScore(student, selectedMeetingIndex);
             const mNotes = getMeetingNotes(student, selectedMeetingIndex);
             
-            const predicate = getPredicate(mScore);
+            const predicate = mScore !== null ? getPredicate(mScore) : { text: 'Belum Dinilai', code: '-', color: 'slate' };
             const isUpdatedRecently = recentUpdatedId === student.id;
             const scoreStyle = getScoreColorScheme(mScore);
 
@@ -400,7 +469,7 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
                 <div className="flex items-center space-x-1.5 shrink-0">
                   {/* Predikat label di tablet/desktop */}
                   <span className="hidden md:inline text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
-                    {predicate.code}
+                    {mScore !== null ? predicate.code : '-'}
                   </span>
 
                   {/* Tombol Catatan */}
@@ -426,10 +495,10 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
                     <button
                       type="button"
                       onClick={() => handleScoreChange(student, -10)}
-                      disabled={!isScoringActive || mScore <= 0}
+                      disabled={!isScoringActive || (mScore !== null && mScore <= 0)}
                       aria-label="Kurangi nilai 10"
                       className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-bold text-xs select-none transition-all ${
-                        !isScoringActive || mScore <= 0
+                        !isScoringActive || (mScore !== null && mScore <= 0)
                           ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                           : 'bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white shadow-xs cursor-pointer active:scale-90'
                       }`}
@@ -440,19 +509,19 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
                     {/* Angka Nilai dengan Latar Berwarna Sesuai Tingkat Nilai */}
                     <div
                       className={`w-9 sm:w-11 px-1 py-1 rounded-lg border text-center flex items-center justify-center font-black text-xs sm:text-sm tracking-tight transition-all duration-300 shadow-2xs ${scoreStyle.card}`}
-                      title={`Nilai: ${mScore} (${scoreStyle.predicate})`}
+                      title={mScore !== null ? `Nilai: ${mScore} (${scoreStyle.predicate})` : 'Belum Dinilai'}
                     >
-                      {mScore}
+                      {mScore !== null ? mScore : '-'}
                     </div>
 
                     {/* Tombol Panah Atas (▲) - Hijau */}
                     <button
                       type="button"
                       onClick={() => handleScoreChange(student, 10)}
-                      disabled={!isScoringActive || mScore >= 100}
+                      disabled={!isScoringActive || (mScore !== null && mScore >= 100)}
                       aria-label="Tambah nilai 10"
                       className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-bold text-xs select-none transition-all ${
-                        !isScoringActive || mScore >= 100
+                        !isScoringActive || (mScore !== null && mScore >= 100)
                           ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                           : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-xs cursor-pointer active:scale-90'
                       }`}
@@ -507,8 +576,13 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
               </button>
               <button
                 type="button"
+                disabled={!isScoringActive}
                 onClick={() => handleSaveNotes(editingStudentId)}
-                className="px-4 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs"
+                className={`px-4 py-1.5 text-xs font-bold text-white rounded-xl shadow-xs transition-colors ${
+                  !isScoringActive
+                    ? 'bg-slate-400 cursor-not-allowed opacity-60'
+                    : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer'
+                }`}
               >
                 Simpan
               </button>

@@ -7,6 +7,7 @@ import { StudentPortalView } from './components/StudentPortalView';
 import { AdminPortalView } from './components/AdminPortalView';
 import { AdminSyncModal } from './components/AdminSyncModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { CriteriaSidebar } from './components/CriteriaSidebar';
 import {
   ClassRoom,
   Student,
@@ -14,12 +15,15 @@ import {
   CurrentUser,
   ActivePage,
   MeetingSchedule,
+  EvaluationCriteriaConfig,
 } from './types';
 import {
   DEFAULT_CLASSES,
   DEFAULT_STUDENTS,
   DEFAULT_TEACHER_CODES,
+  DEFAULT_EVALUATION_CRITERIA,
 } from './data/defaultData';
+import { getLocalDateString } from './utils/scheduleHelper';
 import {
   initializeFirestoreIfNeeded,
   listenToStudents,
@@ -37,8 +41,11 @@ import {
   clearAllTeacherCodesInDb,
   resetDatabaseToDefaultsInDb,
   deduplicateStudentsInDb,
+  resetAllStudentScoresInDb,
   listenToSchedules,
   saveScheduleInDb,
+  listenToCriteria,
+  saveCriteriaInDb,
   updateStudentMeetingScoreInDb,
   addSystemLog,
   listenToSystemLogs,
@@ -53,6 +60,7 @@ export default function App() {
   const [students, setStudents] = useState<Student[]>(DEFAULT_STUDENTS);
   const [teacherCodes, setTeacherCodes] = useState<TeacherCode[]>(DEFAULT_TEACHER_CODES);
   const [schedules, setSchedules] = useState<MeetingSchedule[]>([]);
+  const [criteria, setCriteria] = useState<EvaluationCriteriaConfig>(DEFAULT_EVALUATION_CRITERIA);
 
   // Restore login session from device storage if available
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(() => {
@@ -148,12 +156,22 @@ export default function App() {
       () => {}
     );
 
+    // Subscribe to evaluation criteria in real-time
+    const unsubscribeCriteria = listenToCriteria(
+      (updatedCriteria) => {
+        if (!isMounted) return;
+        setCriteria(updatedCriteria);
+      },
+      () => {}
+    );
+
     return () => {
       isMounted = false;
       unsubscribeStudents();
       unsubscribeClasses();
       unsubscribeTeacherCodes();
       unsubscribeSchedules();
+      unsubscribeCriteria();
     };
   }, []);
 
@@ -201,25 +219,46 @@ export default function App() {
   // Update meeting-specific score and notes with immediate Firestore real-time persistence
   const handleUpdateMeetingScore = useCallback(
     async (studentId: string, meetingIndex: number, newScore: number, notes?: string) => {
+      // ATURAN 1: Penilaian hanya berlaku pada kolom yang di-set tanggal.
+      // Jika tanggal tidak diset maka tidak akan pernah tersimpan ke penilaian.
+      const sched = schedules.find((s) => s.meetingNumber === meetingIndex + 1);
+      const activeDate = sched?.activeDate ? sched.activeDate.trim() : '';
+      if (!activeDate) {
+        console.warn(`Penilaian ditolak: Pertemuan ${meetingIndex + 1} belum diatur tanggalnya. Tidak dapat disimpan.`);
+        return;
+      }
+
+      // ATURAN 2: Tanggal set auto terbuka pada tanggal itu (hari H).
+      // 1 hari setelah itu (atau sebelum hari H) terkunci kembali secara otomatis.
+      const todayLocal = getLocalDateString();
+      const todayUTC = new Date().toISOString().split('T')[0];
+      const isOpenToday = activeDate === todayLocal || activeDate === todayUTC;
+      if (!isOpenToday) {
+        console.warn(
+          `Penilaian ditolak: Pertemuan ${meetingIndex + 1} terkunci (hanya terbuka otomatis pada ${activeDate}).`
+        );
+        return;
+      }
+
       setStudents((prev) =>
         prev.map((s) => {
           if (s.id !== studentId) return s;
           const currentScores = s.meetingScores && s.meetingScores.length === 20 ? [...s.meetingScores] : Array(20).fill(null);
           const currentNotes = s.meetingNotes && s.meetingNotes.length === 20 ? [...s.meetingNotes] : Array(20).fill(null);
-          
-          if (currentScores[0] === null) {
-            currentScores[0] = s.score;
-          }
-          if (currentNotes[0] === null) {
-            currentNotes[0] = s.notes || '';
-          }
 
           currentScores[meetingIndex] = newScore;
           if (notes !== undefined) {
             currentNotes[meetingIndex] = notes;
           }
 
-          const validScores = currentScores.filter((x): x is number => typeof x === 'number' && x !== null);
+          // Hitung rata-rata hanya dari pertemuan yang memiliki jadwal aktif
+          const validScores: number[] = [];
+          for (let i = 0; i < 20; i++) {
+            const sc = schedules.find((sch) => sch.meetingNumber === i + 1);
+            if (sc?.activeDate && sc.activeDate.trim() !== '' && typeof currentScores[i] === 'number' && currentScores[i] !== null && currentScores[i]! > 0) {
+              validScores.push(currentScores[i] as number);
+            }
+          }
           const avgScore = validScores.length > 0 ? Math.round(validScores.reduce((sum, val) => sum + val, 0) / validScores.length) : newScore;
 
           return {
@@ -237,8 +276,79 @@ export default function App() {
         console.error('Failed to update student meeting score:', err);
       }
     },
-    []
+    [schedules]
   );
+
+  // Reset student evaluation scores (Tab Jadwal)
+  // Aturan: Hanya reset pertemuan yang TIDAK di-set tanggalnya.
+  // Nilai pada pertemuan yang sudah di-set tanggalnya TIDAK ikut ter-reset.
+  const handleResetStudentScores = async (): Promise<number> => {
+    const count = await resetAllStudentScoresInDb(schedules);
+
+    // Filter indeks pertemuan yang memiliki tanggal aktif
+    const configuredIndexes = new Set<number>();
+    schedules.forEach((s) => {
+      if (s.activeDate && s.activeDate.trim() !== '') {
+        configuredIndexes.add(s.meetingNumber - 1);
+      }
+    });
+
+    setStudents((prev) =>
+      prev.map((s) => {
+        const currentScores =
+          s.meetingScores && s.meetingScores.length === 20
+            ? [...s.meetingScores]
+            : Array(20).fill(null);
+        const currentNotes =
+          s.meetingNotes && s.meetingNotes.length === 20
+            ? [...s.meetingNotes]
+            : Array(20).fill(null);
+
+        // Hanya kosongkan pertemuan yang BELUM diatur tanggalnya
+        for (let m = 0; m < 20; m++) {
+          if (!configuredIndexes.has(m)) {
+            currentScores[m] = null;
+            currentNotes[m] = null;
+          }
+        }
+
+        // Hitung ulang rata-rata dari pertemuan berjadwal yang tersisa
+        const validScores: number[] = [];
+        for (let m = 0; m < 20; m++) {
+          if (configuredIndexes.has(m)) {
+            const sc = currentScores[m];
+            if (typeof sc === 'number' && sc !== null && sc > 0) {
+              validScores.push(sc);
+            }
+          }
+        }
+
+        const avgScore =
+          validScores.length > 0
+            ? Math.round(validScores.reduce((sum, val) => sum + val, 0) / validScores.length)
+            : 0;
+
+        return {
+          ...s,
+          score: avgScore,
+          meetingScores: currentScores,
+          meetingNotes: currentNotes,
+          notes: configuredIndexes.has(0) ? (currentNotes[0] || s.notes || '') : '',
+          lastUpdated: new Date().toISOString(),
+        };
+      })
+    );
+
+    const configuredCount = configuredIndexes.size;
+    const notificationMsg =
+      configuredCount > 0
+        ? `Berhasil mereset pertemuan tanpa tanggal. Nilai pada ${configuredCount} pertemuan berjadwal tetap dipertahankan!`
+        : `Berhasil mereset seluruh penilaian untuk ${count} data siswa!`;
+
+    setSaveSuccessNotification(notificationMsg);
+    setTimeout(() => setSaveSuccessNotification(null), 4000);
+    return count;
+  };
 
   // Admin student management - saves immediately to Firebase
   const handleSaveStudent = async (student: Student) => {
@@ -409,6 +519,16 @@ export default function App() {
     );
   };
 
+  const handleSaveCriteria = async (newCriteria: EvaluationCriteriaConfig) => {
+    await saveCriteriaInDb(newCriteria);
+    setCriteria(newCriteria);
+    await addSystemLog(
+      'UPDATE_KRITERIA',
+      'Memperbarui daftar kriteria penilaian sikap (P5)',
+      currentUser?.identifier || 'ADMIN'
+    );
+  };
+
   const handleExportAll = () => {
     exportAllClassesToExcel(classes, students);
   };
@@ -455,8 +575,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-emerald-200 selection:text-emerald-900">
-      {/* Top Navigation - Hanya tampil setelah login (kecuali di halaman siswa) */}
-      {activePage !== 'login' && activePage !== 'student-view' && (
+      {/* Top Navigation - Hanya tampil setelah login (untuk admin selalu tampil termasuk saat melihat tampilan siswa) */}
+      {activePage !== 'login' && (currentUser?.role === 'admin' || activePage !== 'student-view') && (
         <Navbar
           currentUser={currentUser}
           activePage={activePage}
@@ -502,7 +622,9 @@ export default function App() {
               classes={classes}
               teacherCodes={teacherCodes}
               schedules={schedules}
+              criteria={criteria}
               onSaveSchedule={handleSaveSchedule}
+              onSaveCriteria={handleSaveCriteria}
               onBackToDashboard={() => setActivePage('dashboard')}
               onSaveStudent={handleSaveStudent}
               onDeleteStudent={handleDeleteStudent}
@@ -514,6 +636,7 @@ export default function App() {
               onClearTeacherCodes={handleClearTeacherCodes}
               onResetDatabase={handleResetDatabase}
               onDeduplicateStudents={handleDeduplicateStudents}
+              onResetStudentScores={handleResetStudentScores}
               firebaseConnected={firebaseConnected}
             />
           </div>
@@ -525,6 +648,7 @@ export default function App() {
             <DashboardView
               classes={classes}
               students={students}
+              schedules={schedules}
               onSelectClass={handleSelectClass}
               onOpenAdminModal={handleOpenAdminModal}
               onUpdateScore={handleUpdateScore}
@@ -550,18 +674,35 @@ export default function App() {
         )}
 
         {/* Portal Siswa */}
-        {activePage === 'student-view' && currentUser && currentUser.studentData && (
+        {activePage === 'student-view' && (
           <div className="pb-16 flex-1">
             <StudentPortalView
+              schedules={schedules}
               student={
-                students.find((s) => s.nisn === currentUser.identifier) ||
-                currentUser.studentData
+                currentUser?.studentData
+                  ? (students.find((s) => s.nisn === currentUser.identifier) || currentUser.studentData)
+                  : (students.length > 0 ? students[0] : {
+                      id: 'preview-student',
+                      nisn: '0012345678',
+                      name: 'Siswa Contoh',
+                      classId: classes.length > 0 ? classes[0].id : 'class-7a',
+                      className: classes.length > 0 ? classes[0].name : 'Kelas 7A',
+                      score: 80,
+                      projectTitle: 'Kreasi Daur Ulang P5',
+                      notes: 'Aktif, disiplin, dan kreatif dalam pembuatan produk daur ulang.',
+                      lastUpdated: new Date().toISOString(),
+                    })
               }
               onLogout={handleLogout}
             />
           </div>
         )}
       </main>
+
+      {/* Sidebar Kriteria Penilaian Sikap (Khusus Panel Guru & Detail Kelas) */}
+      {currentUser && currentUser.role !== 'student' && (activePage === 'dashboard' || activePage === 'class-detail') && (
+        <CriteriaSidebar criteria={criteria} />
+      )}
 
       {/* Admin / CSV Sync / Code Management Modal */}
       <AdminSyncModal

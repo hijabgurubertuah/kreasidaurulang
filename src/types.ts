@@ -53,6 +53,19 @@ export interface CurrentUser {
 
 export type ActivePage = 'login' | 'dashboard' | 'class-detail' | 'student-view' | 'admin-portal';
 
+export interface ScoringCriterion {
+  id: string;
+  type: 'plus' | 'minus';
+  title: string;
+  points?: number;
+}
+
+export interface EvaluationCriteriaConfig {
+  positiveCriteria: ScoringCriterion[];
+  negativeCriteria: ScoringCriterion[];
+  updatedAt?: string;
+}
+
 export interface SystemLog {
   id: string;
   action: string;

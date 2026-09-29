@@ -33,8 +33,19 @@ import {
   Award,
   MessageSquare,
   Calendar,
+  ListChecks,
+  PlusCircle,
+  MinusCircle,
 } from 'lucide-react';
-import { ClassRoom, Student, TeacherCode, MeetingSchedule, SystemLog } from '../types';
+import {
+  ClassRoom,
+  Student,
+  TeacherCode,
+  MeetingSchedule,
+  SystemLog,
+  EvaluationCriteriaConfig,
+  ScoringCriterion,
+} from '../types';
 import { parseStudentCsv, ParsedCsvResult } from '../utils/csvParser';
 import { downloadSampleCsvTemplate } from '../utils/excelExport';
 import { getScoreColorScheme, getQuoteForScore } from './StudentPortalView';
@@ -45,8 +56,11 @@ import {
 import {
   getSpreadsheetUrlFromDb,
   saveSpreadsheetUrlInDb,
+  deleteSpreadsheetUrlFromDb,
+  saveCriteriaInDb,
   listenToSystemLogs,
 } from '../services/firestoreService';
+import { DEFAULT_EVALUATION_CRITERIA } from '../data/defaultData';
 import { TeacherBarcodeModal } from './TeacherBarcodeModal';
 import { StudentBarcodeModal } from './StudentBarcodeModal';
 import { DatabaseUsageView } from './DatabaseUsageView';
@@ -56,7 +70,9 @@ interface AdminPortalViewProps {
   classes: ClassRoom[];
   teacherCodes: TeacherCode[];
   schedules?: MeetingSchedule[];
+  criteria?: EvaluationCriteriaConfig;
   onSaveSchedule?: (schedule: MeetingSchedule) => void | Promise<void>;
+  onSaveCriteria?: (criteria: EvaluationCriteriaConfig) => Promise<void>;
   onBackToDashboard: () => void;
   onSaveStudent: (student: Student) => void | Promise<void>;
   onDeleteStudent: (studentId: string) => void | Promise<void>;
@@ -74,6 +90,7 @@ interface AdminPortalViewProps {
     removedClassDuplicates?: number;
     removedEmptyClasses?: number;
   }>;
+  onResetStudentScores?: () => Promise<number>;
   firebaseConnected?: boolean;
   hasPendingChanges?: boolean;
   pendingChangesCount?: number;
@@ -87,7 +104,9 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   classes,
   teacherCodes,
   schedules = [],
+  criteria,
   onSaveSchedule,
+  onSaveCriteria,
   onBackToDashboard,
   onSaveStudent,
   onDeleteStudent,
@@ -99,6 +118,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   onClearTeacherCodes,
   onResetDatabase,
   onDeduplicateStudents,
+  onResetStudentScores,
   firebaseConnected = true,
   hasPendingChanges = false,
   pendingChangesCount = 0,
@@ -106,7 +126,35 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   isSavingToFirebase = false,
   onDiscardPendingChanges,
 }) => {
-  const [activeTab, setActiveTab] = useState<'spreadsheet' | 'students' | 'scores' | 'teachers' | 'database' | 'schedule'>('scores');
+  const [activeTab, setActiveTab] = useState<'students' | 'scores' | 'teachers' | 'database' | 'schedule' | 'criteria'>('students');
+
+  // Reset Scores States (Jadwal tab)
+  const [isResettingScores, setIsResettingScores] = useState(false);
+  const [showResetScoresConfirm, setShowResetScoresConfirm] = useState(false);
+
+  // Criteria Management States
+  const [localPositiveCriteria, setLocalPositiveCriteria] = useState<ScoringCriterion[]>(
+    () => criteria?.positiveCriteria || DEFAULT_EVALUATION_CRITERIA.positiveCriteria
+  );
+  const [localNegativeCriteria, setLocalNegativeCriteria] = useState<ScoringCriterion[]>(
+    () => criteria?.negativeCriteria || DEFAULT_EVALUATION_CRITERIA.negativeCriteria
+  );
+  const [newPosTitle, setNewPosTitle] = useState('');
+  const [newNegTitle, setNewNegTitle] = useState('');
+  const [isSavingCriteria, setIsSavingCriteria] = useState(false);
+  const [hasCriteriaChanges, setHasCriteriaChanges] = useState(false);
+
+  // Editing Criterion State
+  const [editingCriterionId, setEditingCriterionId] = useState<string | null>(null);
+  const [editCriterionTitle, setEditCriterionTitle] = useState<string>('');
+
+  // Sync criteria when updated remotely
+  useEffect(() => {
+    if (criteria && !hasCriteriaChanges) {
+      setLocalPositiveCriteria(criteria.positiveCriteria || DEFAULT_EVALUATION_CRITERIA.positiveCriteria);
+      setLocalNegativeCriteria(criteria.negativeCriteria || DEFAULT_EVALUATION_CRITERIA.negativeCriteria);
+    }
+  }, [criteria, hasCriteriaChanges]);
 
   // Scheduling edit states
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
@@ -125,7 +173,10 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
 
   // Google Sheets Online Sync State
   const [spreadsheetUrl, setSpreadsheetUrl] = useState('');
+  const [savedSpreadsheetUrl, setSavedSpreadsheetUrl] = useState('');
   const [isFetchingSheet, setIsFetchingSheet] = useState(false);
+  const [isSavingSpreadsheetUrl, setIsSavingSpreadsheetUrl] = useState(false);
+  const [isDeletingSpreadsheetUrl, setIsDeletingSpreadsheetUrl] = useState(false);
 
   // Student Form (Add / Edit Modal)
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
@@ -184,6 +235,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     getSpreadsheetUrlFromDb().then((savedUrl) => {
       if (savedUrl) {
         setSpreadsheetUrl(savedUrl);
+        setSavedSpreadsheetUrl(savedUrl);
       }
     });
   }, []);
@@ -280,6 +332,179 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     return parseGoogleSheetsUrl(spreadsheetUrl);
   }, [spreadsheetUrl]);
 
+  // Handler reset seluruh nilai penilaian siswa (Tab Jadwal)
+  const handleConfirmResetScores = async () => {
+    if (!onResetStudentScores) return;
+    setIsResettingScores(true);
+    try {
+      const count = await onResetStudentScores();
+      setShowResetScoresConfirm(false);
+      setSuccessMessage(`Berhasil mereset penilaian pertemuan tanpa tanggal untuk ${count} siswa. Nilai pada pertemuan berjadwal tetap dipertahankan.`);
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } catch (err) {
+      console.error('Failed to reset student scores:', err);
+      setErrorMessage('Gagal mereset penilaian siswa. Silakan coba lagi.');
+      setTimeout(() => setErrorMessage(''), 4000);
+    } finally {
+      setIsResettingScores(false);
+    }
+  };
+
+  // Criteria Action Handlers
+  const handleStartEditCriterion = (criterion: ScoringCriterion) => {
+    setEditingCriterionId(criterion.id);
+    setEditCriterionTitle(criterion.title);
+  };
+
+  const handleCancelEditCriterion = () => {
+    setEditingCriterionId(null);
+    setEditCriterionTitle('');
+  };
+
+  const handleSaveEditedCriterion = (id: string, type: 'plus' | 'minus') => {
+    const cleanTitle = editCriterionTitle.trim();
+    if (!cleanTitle) return;
+
+    if (type === 'plus') {
+      setLocalPositiveCriteria((prev) =>
+        prev.map((c) =>
+          c.id === id ? { ...c, title: cleanTitle, points: 10 } : c
+        )
+      );
+    } else {
+      setLocalNegativeCriteria((prev) =>
+        prev.map((c) =>
+          c.id === id ? { ...c, title: cleanTitle, points: 10 } : c
+        )
+      );
+    }
+    setEditingCriterionId(null);
+    setEditCriterionTitle('');
+    setHasCriteriaChanges(true);
+  };
+
+  const handleAddPositiveCriterion = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanTitle = newPosTitle.trim();
+    if (!cleanTitle) return;
+    const newItem: ScoringCriterion = {
+      id: `crit-pos-${Date.now()}`,
+      type: 'plus',
+      title: cleanTitle,
+      points: 10,
+    };
+    setLocalPositiveCriteria((prev) => [...prev, newItem]);
+    setNewPosTitle('');
+    setHasCriteriaChanges(true);
+  };
+
+  const handleDeletePositiveCriterion = (id: string) => {
+    setLocalPositiveCriteria((prev) => prev.filter((item) => item.id !== id));
+    setHasCriteriaChanges(true);
+  };
+
+  const handleAddNegativeCriterion = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanTitle = newNegTitle.trim();
+    if (!cleanTitle) return;
+    const newItem: ScoringCriterion = {
+      id: `crit-neg-${Date.now()}`,
+      type: 'minus',
+      title: cleanTitle,
+      points: 10,
+    };
+    setLocalNegativeCriteria((prev) => [...prev, newItem]);
+    setNewNegTitle('');
+    setHasCriteriaChanges(true);
+  };
+
+  const handleDeleteNegativeCriterion = (id: string) => {
+    setLocalNegativeCriteria((prev) => prev.filter((item) => item.id !== id));
+    setHasCriteriaChanges(true);
+  };
+
+  const handleSaveCriteriaClick = async () => {
+    setIsSavingCriteria(true);
+    setErrorMessage('');
+    try {
+      const payload: EvaluationCriteriaConfig = {
+        positiveCriteria: localPositiveCriteria,
+        negativeCriteria: localNegativeCriteria,
+        updatedAt: new Date().toISOString(),
+      };
+      if (onSaveCriteria) {
+        await onSaveCriteria(payload);
+      } else {
+        await saveCriteriaInDb(payload);
+      }
+      setHasCriteriaChanges(false);
+      setSuccessMessage('Kriteria penilaian berhasil disimpan ke Firebase Firestore secara real-time!');
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } catch (err: any) {
+      setErrorMessage(`Gagal menyimpan kriteria: ${err.message}`);
+    } finally {
+      setIsSavingCriteria(false);
+    }
+  };
+
+  const handleResetCriteriaToDefault = () => {
+    if (!window.confirm('Kembalikan daftar kriteria penilai ke default modul Kokurikuler Daur Ulang?')) {
+      return;
+    }
+    setLocalPositiveCriteria(DEFAULT_EVALUATION_CRITERIA.positiveCriteria);
+    setLocalNegativeCriteria(DEFAULT_EVALUATION_CRITERIA.negativeCriteria);
+    setHasCriteriaChanges(true);
+  };
+
+  // Simpan link spreadsheet ke Firebase
+  const handleSaveSpreadsheetLink = async () => {
+    const cleanUrl = spreadsheetUrl.trim();
+    if (!cleanUrl) {
+      setErrorMessage('Tempelkan link Google Spreadsheet terlebih dahulu sebelum menyimpan.');
+      return;
+    }
+
+    setIsSavingSpreadsheetUrl(true);
+    setErrorMessage('');
+    setSuccessMessage('');
+    try {
+      await saveSpreadsheetUrlInDb(cleanUrl);
+      setSavedSpreadsheetUrl(cleanUrl);
+      setSuccessMessage('Link spreadsheet berhasil disimpan ke Firebase!');
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } catch (err: any) {
+      setErrorMessage(`Gagal menyimpan link ke Firebase: ${err.message}`);
+    } finally {
+      setIsSavingSpreadsheetUrl(false);
+    }
+  };
+
+  // Hapus link spreadsheet dari Firebase
+  const handleDeleteSpreadsheetLink = async () => {
+    if (
+      !window.confirm(
+        'Apakah Anda yakin ingin menghapus link Google Spreadsheet ini dari Firebase?'
+      )
+    ) {
+      return;
+    }
+
+    setIsDeletingSpreadsheetUrl(true);
+    setErrorMessage('');
+    setSuccessMessage('');
+    try {
+      await deleteSpreadsheetUrlFromDb();
+      setSpreadsheetUrl('');
+      setSavedSpreadsheetUrl('');
+      setSuccessMessage('Link spreadsheet berhasil dihapus dari Firebase!');
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } catch (err: any) {
+      setErrorMessage(`Gagal menghapus link dari Firebase: ${err.message}`);
+    } finally {
+      setIsDeletingSpreadsheetUrl(false);
+    }
+  };
+
   // Pull / Fetch data directly from Google Sheets Link
   const handleFetchSpreadsheet = async () => {
     const cleanUrl = spreadsheetUrl.trim();
@@ -295,6 +520,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     try {
       // 1. Save URL in Firestore & memory so it's remembered
       await saveSpreadsheetUrlInDb(cleanUrl);
+      setSavedSpreadsheetUrl(cleanUrl);
 
       // 2. Fetch CSV text from Google
       const csvText = await fetchGoogleSheetCsv(cleanUrl);
@@ -527,14 +753,20 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
 
     const rows = filteredStudents.map((st, idx) => {
       const meetingScores = st.meetingScores || [];
-      const validScores = meetingScores.filter(
-        (s): s is number => typeof s === 'number' && s !== null
-      );
+      const validScores: number[] = [];
+      for (let i = 0; i < 20; i++) {
+        const sched = schedules.find((s) => s.meetingNumber === i + 1);
+        const isDateSet = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
+        if (isDateSet && typeof meetingScores[i] === 'number' && meetingScores[i] !== null && (meetingScores[i] as number) > 0) {
+          validScores.push(meetingScores[i] as number);
+        }
+      }
+
       const effectiveValidScores =
-        validScores.length > 0 ? validScores : [st.score];
-      const avgScore = Math.round(
-        effectiveValidScores.reduce((sum, val) => sum + val, 0) / effectiveValidScores.length
-      );
+        validScores.length > 0 ? validScores : (st.score > 0 ? [st.score] : []);
+      const avgScore = effectiveValidScores.length > 0
+        ? Math.round(effectiveValidScores.reduce((sum, val) => sum + val, 0) / effectiveValidScores.length)
+        : '-';
 
       const rowData = [
         String(idx + 1),
@@ -545,10 +777,10 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
 
       for (let i = 0; i < 20; i++) {
         let mScore: any = '';
-        if (meetingScores[i] !== undefined && meetingScores[i] !== null) {
+        const sched = schedules.find((s) => s.meetingNumber === i + 1);
+        const isDateSet = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
+        if (isDateSet && meetingScores[i] !== undefined && meetingScores[i] !== null && (meetingScores[i] as number) > 0) {
           mScore = meetingScores[i];
-        } else if (i === 0) {
-          mScore = st.score;
         }
         rowData.push(mScore !== '' ? String(mScore) : '-');
       }
@@ -866,22 +1098,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         <button
           type="button"
           onClick={() => {
-            setActiveTab('spreadsheet');
-            setErrorMessage('');
-          }}
-          className={`flex items-center justify-center space-x-1 py-1.5 px-0.5 rounded-xl text-xs font-bold transition-all cursor-pointer truncate ${
-            activeTab === 'spreadsheet'
-              ? 'bg-white text-emerald-800 shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-          <span className="truncate ml-1">SPREADSHEET</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
             setActiveTab('students');
             setErrorMessage('');
           }}
@@ -946,6 +1162,22 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         <button
           type="button"
           onClick={() => {
+            setActiveTab('criteria');
+            setErrorMessage('');
+          }}
+          className={`flex items-center justify-center space-x-1 py-1.5 px-0.5 rounded-xl text-xs font-bold transition-all cursor-pointer truncate ${
+            activeTab === 'criteria'
+              ? 'bg-white text-teal-800 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <ListChecks className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+          <span className="truncate ml-1">KRITERIA</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
             setActiveTab('database');
             setErrorMessage('');
           }}
@@ -960,104 +1192,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         </button>
       </div>
 
-      {/* TAB 1: SPREADSHEET ONLINE SYNC & FILE CSV */}
-      {activeTab === 'spreadsheet' && (
-        <div className="space-y-4">
-          {/* Card Link Spreadsheet */}
-          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center space-x-1.5">
-                  <LinkIcon className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Link Spreadsheet</span>
-                </h3>
-              </div>
-
-              {spreadsheetUrl && (
-                <button
-                  type="button"
-                  onClick={handleOpenEditSpreadsheet}
-                  className="inline-flex items-center justify-center space-x-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Buka Spreadsheet</span>
-                </button>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                Link Spreadsheet / Google Sheets:
-              </label>
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <input
-                  type="url"
-                  value={spreadsheetUrl}
-                  onChange={(e) => setSpreadsheetUrl(e.target.value)}
-                  placeholder="https://docs.google.com/spreadsheets/d/..."
-                  className="flex-1 px-3.5 py-2.5 text-xs font-mono rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50"
-                />
-                <button
-                  type="button"
-                  onClick={handleFetchSpreadsheet}
-                  disabled={isFetchingSheet}
-                  className="w-full sm:w-auto flex items-center justify-center space-x-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shrink-0 shadow-xs cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isFetchingSheet ? 'animate-spin' : ''}`} />
-                  <span>{isFetchingSheet ? 'Menarik Data...' : 'Tarik Data ke Memori'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Card Alternatif: Unggah File CSV Manual */}
-          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center space-x-1.5">
-                  <UploadCloud className="w-4 h-4 text-slate-600 shrink-0" />
-                  <span>Unggah CSV</span>
-                </h3>
-              </div>
-
-              <button
-                type="button"
-                onClick={downloadSampleCsvTemplate}
-                className="inline-flex items-center space-x-1 px-2.5 py-1 text-slate-600 hover:text-emerald-700 bg-slate-100 rounded-lg text-[11px] font-bold cursor-pointer"
-              >
-                <Download className="w-3 h-3" />
-                <span className="hidden xs:inline">Contoh CSV</span>
-              </button>
-            </div>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv,text/csv"
-              onChange={handleFileChange}
-              className="w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 cursor-pointer"
-            />
-
-            {parsedData && (
-              <div className="space-y-2 pt-1">
-                <div className="text-xs font-bold text-slate-800">
-                  Ditemukan: {parsedData.students.length} Siswa ({parsedData.classes.length} Kelas)
-                </div>
-                <button
-                  type="button"
-                  onClick={handleSyncManualFile}
-                  disabled={isSyncingFile}
-                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-                >
-                  {isSyncingFile ? 'Memuat...' : 'Muat CSV ke Daftar Siswa (Tanpa Duplikasi)'}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: PENGATURAN SISWA, CENTANG SEMUA & NISN */}
+      {/* TAB 1: PENGATURAN SISWA, CENTANG SEMUA, NISN, SPREADSHEET & CSV */}
       {activeTab === 'students' && (
         <div className="space-y-3">
           {/* Floating Bulk Action Bar saat ada siswa yang dicentang */}
@@ -1422,6 +1557,148 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
               </div>
             </div>
           </div>
+
+          {/* SINKRONISASI SPREADSHEET ONLINE & FILE CSV (DI BAWAH TAB SISWA) */}
+          <div className="space-y-4 pt-2">
+            {/* Card Link Google Spreadsheet */}
+            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div className="flex items-center space-x-2">
+                  <div className="p-2 bg-emerald-50 rounded-xl text-emerald-700">
+                    <LinkIcon className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs sm:text-sm font-bold text-slate-900">
+                      Link Google Spreadsheet
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Sinkronisasi dan hubungkan link Google Spreadsheet langsung ke Firebase Firestore
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  {savedSpreadsheetUrl && (
+                    <span className="inline-flex items-center space-x-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded-lg text-[11px] font-bold">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Tersimpan di Firebase</span>
+                    </span>
+                  )}
+
+                  {spreadsheetUrl && (
+                    <button
+                      type="button"
+                      onClick={handleOpenEditSpreadsheet}
+                      className="inline-flex items-center justify-center space-x-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer active:scale-95"
+                      title="Buka link spreadsheet di tab browser baru"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Buka Spreadsheet</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Link Spreadsheet / Google Sheets:
+                  </label>
+                  <input
+                    type="url"
+                    value={spreadsheetUrl}
+                    onChange={(e) => setSpreadsheetUrl(e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                    className="w-full px-3.5 py-2.5 text-xs font-mono rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50"
+                  />
+                </div>
+
+                {/* Action Buttons: Simpan ke Firebase, Hapus dari Firebase, & Tarik Data */}
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {/* Tombol Simpan Link ke Firebase */}
+                  <button
+                    type="button"
+                    onClick={handleSaveSpreadsheetLink}
+                    disabled={isSavingSpreadsheetUrl || !spreadsheetUrl.trim()}
+                    className="flex items-center justify-center space-x-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-50 active:scale-95"
+                    title="Simpan tautan spreadsheet ini ke Firebase agar tersimpan secara permanen"
+                  >
+                    <Save className={`w-3.5 h-3.5 ${isSavingSpreadsheetUrl ? 'animate-spin' : ''}`} />
+                    <span>{isSavingSpreadsheetUrl ? 'Menyimpan...' : 'Simpan Link ke Firebase'}</span>
+                  </button>
+
+                  {/* Tombol Hapus Link dari Firebase */}
+                  <button
+                    type="button"
+                    onClick={handleDeleteSpreadsheetLink}
+                    disabled={isDeletingSpreadsheetUrl || (!spreadsheetUrl && !savedSpreadsheetUrl)}
+                    className="flex items-center justify-center space-x-1.5 px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-40 active:scale-95"
+                    title="Hapus tautan spreadsheet dari Firebase"
+                  >
+                    <Trash2 className={`w-3.5 h-3.5 ${isDeletingSpreadsheetUrl ? 'animate-spin' : ''}`} />
+                    <span>{isDeletingSpreadsheetUrl ? 'Menghapus...' : 'Hapus Link'}</span>
+                  </button>
+
+                  {/* Tombol Tarik Data ke Memori */}
+                  <button
+                    type="button"
+                    onClick={handleFetchSpreadsheet}
+                    disabled={isFetchingSheet || !spreadsheetUrl.trim()}
+                    className="flex items-center justify-center space-x-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-50 active:scale-95 sm:ml-auto"
+                    title="Tarik data siswa dari spreadsheet ke memori"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isFetchingSheet ? 'animate-spin' : ''}`} />
+                    <span>{isFetchingSheet ? 'Menarik Data...' : 'Tarik Data ke Memori'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Card Alternatif: Unggah File CSV Manual */}
+            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xs sm:text-sm font-bold text-slate-900 flex items-center space-x-1.5">
+                    <UploadCloud className="w-4 h-4 text-slate-600 shrink-0" />
+                    <span>Unggah CSV Manual</span>
+                  </h3>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={downloadSampleCsvTemplate}
+                  className="inline-flex items-center space-x-1 px-2.5 py-1 text-slate-600 hover:text-emerald-700 bg-slate-100 rounded-lg text-[11px] font-bold cursor-pointer"
+                >
+                  <Download className="w-3 h-3" />
+                  <span className="hidden xs:inline">Contoh CSV</span>
+                </button>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleFileChange}
+                className="w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 cursor-pointer"
+              />
+
+              {parsedData && (
+                <div className="space-y-2 pt-1">
+                  <div className="text-xs font-bold text-slate-800">
+                    Ditemukan: {parsedData.students.length} Siswa ({parsedData.classes.length} Kelas)
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSyncManualFile}
+                    disabled={isSyncingFile}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                  >
+                    {isSyncingFile ? 'Memuat...' : 'Muat CSV ke Daftar Siswa (Tanpa Duplikasi)'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1694,19 +1971,53 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
       {activeTab === 'schedule' && (
         <div className="space-y-4 animate-fadeIn">
           {/* Header Banner */}
-          <div className="bg-gradient-to-r from-purple-800 to-indigo-900 rounded-2xl p-4 text-white shadow-md">
-            <div className="flex items-center space-x-3">
+          <div className="bg-gradient-to-r from-purple-800 to-indigo-900 rounded-2xl p-4 sm:p-5 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center space-x-3 min-w-0">
               <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center shrink-0 border border-purple-500/30">
                 <Calendar className="w-5 h-5" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h3 className="text-sm sm:text-base font-black leading-tight">
                   Jadwal Pengaktifan Penilaian Pertemuan
                 </h3>
                 <p className="text-xs text-purple-200 mt-1">
-                  Atur tanggal aktif untuk masing-masing dari 20 pertemuan. Guru hanya dapat melakukan penilaian sikap pada tanggal aktif yang ditentukan untuk pertemuan tersebut.
+                  Atur tanggal aktif untuk masing-masing dari 20 pertemuan. Penilaian <strong>hanya berlaku pada kolom yang di-set tanggal</strong>.
                 </p>
               </div>
+            </div>
+
+            {/* Tombol Reset Penilaian Siswa */}
+            <div className="flex items-center space-x-2 shrink-0 self-end sm:self-center">
+              <button
+                type="button"
+                onClick={() => setShowResetScoresConfirm(true)}
+                className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer flex items-center space-x-2 shadow-xs active:scale-95 border border-rose-400/50"
+                title="Reset seluruh penilaian siswa agar kosong kembali"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Reset Penilaian Siswa</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Aturan Pengisian & Keterangan Penilaian */}
+          <div className="bg-amber-50 border border-amber-200/90 rounded-2xl p-3.5 flex items-start space-x-2.5 text-xs text-amber-900">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <strong className="font-extrabold block text-amber-950">
+                Ketentuan Pengisian Jadwal, Auto-Lock, & Validasi Penilaian:
+              </strong>
+              <ul className="list-disc list-inside space-y-1 text-amber-800 leading-relaxed">
+                <li>
+                  <strong>Auto Terbuka pada Hari H:</strong> Penilaian pertemuan akan terbuka secara otomatis tepat pada tanggal yang telah diatur (hari H), dan <strong>1 hari setelah itu akan terkunci kembali</strong> untuk menjaga keaslian data.
+                </li>
+                <li>
+                  <strong>Hanya Berlaku pada Kolom Berjadwal:</strong> Jika tanggal tidak di-set pada suatu pertemuan, maka diubah bagaimanapun nilai dan catatan <strong>tidak akan tersimpan</strong> ke penilaian.
+                </li>
+                <li>
+                  <strong>Aturan Reset Penilaian:</strong> Tombol <em>Reset Penilaian Siswa</em> hanya akan mereset dan mengosongkan nilai uji coba pada pertemuan yang <strong>belum di-set tanggalnya</strong>. Nilai pada pertemuan yang sudah memiliki tanggal tidak akan ikut tereset.
+                </li>
+              </ul>
             </div>
           </div>
 
@@ -1919,6 +2230,292 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         </div>
       )}
 
+      {/* TAB 7: KRITERIA PENILAIAN SIKAP */}
+      {activeTab === 'criteria' && (
+        <div className="space-y-4">
+          {/* Header Card with Save to Firebase Button */}
+          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center space-x-2.5">
+              <div className="p-2.5 bg-emerald-50 rounded-xl text-emerald-700 shrink-0">
+                <ListChecks className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-xs sm:text-sm font-black text-slate-900 leading-tight">
+                  Kriteria Penilaian Sikap (P5 Daur Ulang)
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Tersinkronisasi otomatis ke sidebar panel guru secara real-time setelah klik simpan
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2 self-end sm:self-center">
+              <button
+                type="button"
+                onClick={handleResetCriteriaToDefault}
+                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 active:scale-95"
+                title="Kembalikan daftar kriteria ke default bawaan modul"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span className="hidden xs:inline">Reset Default</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveCriteriaClick}
+                disabled={isSavingCriteria}
+                className={`flex items-center justify-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-black shadow-md transition-all cursor-pointer active:scale-95 ${
+                  hasCriteriaChanges
+                    ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 ring-2 ring-amber-300 animate-pulse'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                }`}
+                title="Simpan kriteria ke Firebase Firestore agar terlihat oleh semua guru"
+              >
+                <Save className={`w-3.5 h-3.5 ${isSavingCriteria ? 'animate-spin' : ''}`} />
+                <span>
+                  {isSavingCriteria
+                    ? 'Menyimpan...'
+                    : hasCriteriaChanges
+                    ? 'Simpan ke Firebase *'
+                    : 'Simpan ke Firebase'}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* Grid 2 Kolom: Kriteria Penambah Poin (+) dan Kriteria Pengurang Poin (-) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* KOLOM KIRI: Penambah Poin (+) */}
+            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-emerald-200/80 shadow-xs space-y-3.5 flex flex-col">
+              <div className="flex items-center justify-between border-b border-emerald-100 pb-2.5">
+                <span className="flex items-center space-x-2 text-xs font-black text-emerald-800 uppercase tracking-wider">
+                  <PlusCircle className="w-4 h-4 text-emerald-600" />
+                  <span>Kriteria Penambah Poin (+)</span>
+                </span>
+                <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
+                  {localPositiveCriteria.length} Kriteria
+                </span>
+              </div>
+
+              {/* Form Tambah Kriteria Positif */}
+              <form onSubmit={handleAddPositiveCriterion} className="flex items-center gap-2">
+                <div className="flex-1 relative">
+                  <input
+                    type="text"
+                    value={newPosTitle}
+                    onChange={(e) => setNewPosTitle(e.target.value)}
+                    placeholder="Ketik kriteria penambah poin..."
+                    className="w-full pl-3 pr-14 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 font-medium"
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-300 select-none">
+                    +10
+                  </span>
+                </div>
+                <button
+                  type="submit"
+                  disabled={!newPosTitle.trim()}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer shadow-xs active:scale-95"
+                >
+                  Tambah
+                </button>
+              </form>
+
+              {/* Daftar Kriteria Positif */}
+              <div className="space-y-2 flex-1 max-h-[380px] overflow-y-auto pr-1 scrollbar-thin">
+                {localPositiveCriteria.map((item, idx) => (
+                  <React.Fragment key={item.id || `pos-${idx}`}>
+                    {editingCriterionId === item.id ? (
+                      <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-300 space-y-2 animate-fadeIn">
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={editCriterionTitle}
+                            onChange={(e) => setEditCriterionTitle(e.target.value)}
+                            placeholder="Ubah kriteria penambah poin..."
+                            className="w-full pl-2.5 pr-14 py-1.5 text-xs rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                            autoFocus
+                          />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-black select-none">
+                            +10
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-end space-x-1.5">
+                          <button
+                            type="button"
+                            onClick={handleCancelEditCriterion}
+                            className="px-2.5 py-1 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEditedCriterion(item.id, 'plus')}
+                            disabled={!editCriterionTitle.trim()}
+                            className="flex items-center space-x-1 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Terapkan</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start justify-between gap-2 p-2.5 rounded-xl bg-slate-50 hover:bg-emerald-50/50 border border-slate-200 transition-colors group">
+                        <div className="flex items-start space-x-2 min-w-0">
+                          <span className="shrink-0 px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-black shadow-xs">
+                            +10
+                          </span>
+                          <p className="text-xs text-slate-800 font-medium leading-snug">
+                            {item.title}
+                          </p>
+                        </div>
+                        <div className="flex items-center space-x-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditCriterion(item)}
+                            className="p-1 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                            title="Edit kriteria ini"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePositiveCriterion(item.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            title="Hapus kriteria ini"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </React.Fragment>
+                ))}
+
+                {localPositiveCriteria.length === 0 && (
+                  <div className="p-6 text-center text-xs text-slate-400 italic">
+                    Belum ada kriteria penambah poin.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* KOLOM KANAN: Pengurang Poin (-) */}
+            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-rose-200/80 shadow-xs space-y-3.5 flex flex-col">
+              <div className="flex items-center justify-between border-b border-rose-100 pb-2.5">
+                <span className="flex items-center space-x-2 text-xs font-black text-rose-800 uppercase tracking-wider">
+                  <MinusCircle className="w-4 h-4 text-rose-600" />
+                  <span>Kriteria Pengurang Poin (-10)</span>
+                </span>
+                <span className="text-xs font-bold text-rose-800 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-200">
+                  {localNegativeCriteria.length} Kriteria
+                </span>
+              </div>
+
+              {/* Form Tambah Kriteria Negatif */}
+              <form onSubmit={handleAddNegativeCriterion} className="flex items-center gap-2">
+                <div className="flex-1 relative">
+                  <input
+                    type="text"
+                    value={newNegTitle}
+                    onChange={(e) => setNewNegTitle(e.target.value)}
+                    placeholder="Ketik kriteria pengurang poin..."
+                    className="w-full pl-3 pr-14 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-rose-500 bg-slate-50 font-medium"
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded-md bg-rose-100 text-rose-800 text-[10px] font-black border border-rose-300 select-none">
+                    -10
+                  </span>
+                </div>
+                <button
+                  type="submit"
+                  disabled={!newNegTitle.trim()}
+                  className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer shadow-xs active:scale-95"
+                >
+                  Tambah
+                </button>
+              </form>
+
+              {/* Daftar Kriteria Negatif */}
+              <div className="space-y-2 flex-1 max-h-[380px] overflow-y-auto pr-1 scrollbar-thin">
+                {localNegativeCriteria.map((item, idx) => (
+                  <React.Fragment key={item.id || `neg-${idx}`}>
+                    {editingCriterionId === item.id ? (
+                      <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 space-y-2 animate-fadeIn">
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={editCriterionTitle}
+                            onChange={(e) => setEditCriterionTitle(e.target.value)}
+                            placeholder="Ubah kriteria pengurang poin..."
+                            className="w-full pl-2.5 pr-14 py-1.5 text-xs rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500 font-medium"
+                            autoFocus
+                          />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black select-none">
+                            -10
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-end space-x-1.5">
+                          <button
+                            type="button"
+                            onClick={handleCancelEditCriterion}
+                            className="px-2.5 py-1 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEditedCriterion(item.id, 'minus')}
+                            disabled={!editCriterionTitle.trim()}
+                            className="flex items-center space-x-1 px-3 py-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Terapkan</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start justify-between gap-2 p-2.5 rounded-xl bg-slate-50 hover:bg-rose-50/50 border border-slate-200 transition-colors group">
+                        <div className="flex items-start space-x-2 min-w-0">
+                          <span className="shrink-0 px-2 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black shadow-xs">
+                            -10
+                          </span>
+                          <p className="text-xs text-slate-800 font-medium leading-snug">
+                            {item.title}
+                          </p>
+                        </div>
+                        <div className="flex items-center space-x-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditCriterion(item)}
+                            className="p-1 text-slate-400 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            title="Edit kriteria ini"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteNegativeCriterion(item.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            title="Hapus kriteria ini"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </React.Fragment>
+                ))}
+
+                {localNegativeCriteria.length === 0 && (
+                  <div className="p-6 text-center text-xs text-slate-400 italic">
+                    Belum ada kriteria pengurang poin.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL TAMBAH / EDIT SISWA */}
       {isStudentModalOpen && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-900/80 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto overscroll-contain">
@@ -2118,6 +2715,75 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         }}
       />
 
+      {/* Modal Konfirmasi Reset Seluruh Penilaian Siswa */}
+      {showResetScoresConfirm && typeof document !== 'undefined' &&
+        createPortal(
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 bg-slate-900/75 backdrop-blur-xs animate-fadeIn">
+            <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 p-5 sm:p-6 relative space-y-4 my-auto">
+              <div className="flex items-center space-x-3 text-rose-600">
+                <div className="p-3 bg-rose-50 rounded-2xl border border-rose-100">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 leading-tight">
+                    Reset Seluruh Penilaian Siswa?
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Mengosongkan semua riwayat nilai 20 pertemuan
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-rose-50/70 rounded-2xl border border-rose-200/70 text-xs text-slate-700 space-y-2">
+                <p className="font-bold text-rose-950">
+                  Apakah Anda yakin ingin mereset penilaian pada pertemuan tanpa jadwal?
+                </p>
+                <ul className="list-disc list-inside space-y-1.5 text-slate-600 text-[11px] leading-relaxed">
+                  <li>
+                    <strong className="text-emerald-700">Pertemuan berjadwal aman:</strong> Nilai yang sudah terisi pada pertemuan yang telah di-set tanggalnya <strong>TIDAK IKUT TER-RESET</strong> (tetap tersimpan aman).
+                  </li>
+                  <li>
+                    <strong className="text-rose-700">Pertemuan tanpa jadwal:</strong> Hanya nilai dan catatan uji coba pada pertemuan yang belum di-set tanggalnya yang akan dikosongkan.
+                  </li>
+                  <li>
+                    Rata-rata sikap untuk {students.length} siswa akan otomatis dihitung ulang berdasarkan pertemuan resmi berjadwal.
+                  </li>
+                </ul>
+              </div>
+
+              <div className="flex items-center justify-end space-x-2 pt-1">
+                <button
+                  type="button"
+                  disabled={isResettingScores}
+                  onClick={() => setShowResetScoresConfirm(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={isResettingScores}
+                  onClick={handleConfirmResetScores}
+                  className="px-4 py-2 text-xs font-black text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50 active:scale-95"
+                >
+                  {isResettingScores ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Mereset Data...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Ya, Reset Nilai Tanpa Tanggal</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
       {/* Modal Popup Rekap Penilaian Siswa saat Nama / Kartu Di-tap */}
       {selectedStudentForModal &&
         createPortal(
@@ -2145,20 +2811,26 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
               {/* Kotak Nilai Ringkas dengan Warna Sesuai Nilai */}
               {(() => {
                 const meetingScores = selectedStudentForModal.meetingScores || [];
-                const validScores = meetingScores.filter(
-                  (s): s is number => typeof s === 'number' && s !== null
-                );
+                const validScores: number[] = [];
+                for (let i = 0; i < 20; i++) {
+                  const sched = schedules.find((s) => s.meetingNumber === i + 1);
+                  const isDateSet = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
+                  if (isDateSet && typeof meetingScores[i] === 'number' && meetingScores[i] !== null && (meetingScores[i] as number) > 0) {
+                    validScores.push(meetingScores[i] as number);
+                  }
+                }
+
                 const effectiveValidScores =
-                  validScores.length > 0 ? validScores : [selectedStudentForModal.score];
-                const avgScore = Math.round(
-                  effectiveValidScores.reduce((sum, val) => sum + val, 0) / effectiveValidScores.length
-                );
+                  validScores.length > 0 ? validScores : (selectedStudentForModal.score > 0 ? [selectedStudentForModal.score] : []);
+                const avgScore = effectiveValidScores.length > 0
+                  ? Math.round(effectiveValidScores.reduce((sum, val) => sum + val, 0) / effectiveValidScores.length)
+                  : null;
 
                 const style = getScoreColorScheme(avgScore);
-                const quote = getQuoteForScore(
+                const quote = avgScore !== null ? getQuoteForScore(
                   avgScore,
                   selectedStudentForModal.nisn || selectedStudentForModal.id
-                );
+                ) : 'Penilaian kokurikuler belum dimulai.';
 
                 return (
                   <div className="space-y-2.5">
@@ -2168,10 +2840,10 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                         Nilai Rata-Rata Akhir
                       </div>
                       <div className="text-3xl font-black tracking-tight my-0.5">
-                        {avgScore}
+                        {avgScore !== null ? avgScore : '-'}
                       </div>
                       <div className="text-[10px] font-extrabold uppercase tracking-wider">
-                        Predikat: {style.predicate}
+                        Predikat: {avgScore !== null ? style.predicate : 'Belum Dinilai'}
                       </div>
                     </div>
 
@@ -2188,12 +2860,12 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                       <div className="grid grid-cols-5 gap-1.5 pt-0.5">
                         {Array.from({ length: 20 }, (_, idx) => {
                           const meetingNum = idx + 1;
+                          const sched = schedules.find((s) => s.meetingNumber === meetingNum);
+                          const isDateSet = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
                           let mScore: number | null = null;
 
-                          if (meetingScores[idx] !== undefined && meetingScores[idx] !== null) {
+                          if (isDateSet && meetingScores[idx] !== undefined && meetingScores[idx] !== null && meetingScores[idx] > 0) {
                             mScore = meetingScores[idx];
-                          } else if (idx === 0) {
-                            mScore = selectedStudentForModal.score;
                           }
 
                           const mStyle = getScoreColorScheme(mScore);
@@ -2228,11 +2900,11 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                     {/* DETAIL PERTEMUAN YANG DIPILIH */}
                     {(() => {
                       const currentMeetingNum = selectedMeetingIndex + 1;
+                      const currentSched = schedules.find((s) => s.meetingNumber === currentMeetingNum);
+                      const isCurrentDateSet = Boolean(currentSched?.activeDate && currentSched.activeDate.trim() !== '');
                       let currentMeetingScore: number | null = null;
-                      if (meetingScores[selectedMeetingIndex] !== undefined && meetingScores[selectedMeetingIndex] !== null) {
+                      if (isCurrentDateSet && meetingScores[selectedMeetingIndex] !== undefined && meetingScores[selectedMeetingIndex] !== null && meetingScores[selectedMeetingIndex] > 0) {
                         currentMeetingScore = meetingScores[selectedMeetingIndex];
-                      } else if (selectedMeetingIndex === 0) {
-                        currentMeetingScore = selectedStudentForModal.score;
                       }
 
                       const currentMeetingNote =

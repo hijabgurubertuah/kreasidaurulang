@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   setDoc,
   updateDoc,
@@ -13,11 +14,12 @@ import {
   limit,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { ClassRoom, Student, TeacherCode, MeetingSchedule, SystemLog } from '../types';
+import { ClassRoom, Student, TeacherCode, MeetingSchedule, SystemLog, EvaluationCriteriaConfig } from '../types';
 import {
   DEFAULT_CLASSES,
   DEFAULT_STUDENTS,
   DEFAULT_TEACHER_CODES,
+  DEFAULT_EVALUATION_CRITERIA,
 } from '../data/defaultData';
 import { recordQuotaUsage, calculateRealtimeStorageSize } from './quotaService';
 
@@ -887,7 +889,6 @@ export async function saveSpreadsheetUrlInDb(url: string) {
  */
 export async function getSpreadsheetUrlFromDb(): Promise<string> {
   try {
-    const { getDoc } = await import('firebase/firestore');
     const ref = doc(db, SETTINGS_COL, SPREADSHEET_DOC);
     const snap = await getDoc(ref);
     if (snap.exists()) {
@@ -897,6 +898,82 @@ export async function getSpreadsheetUrlFromDb(): Promise<string> {
     console.warn('Failed to get spreadsheet URL from Firestore:', err);
   }
   return '';
+}
+
+/**
+ * Delete Google Sheets URL from Firestore
+ */
+export async function deleteSpreadsheetUrlFromDb(): Promise<void> {
+  try {
+    const ref = doc(db, SETTINGS_COL, SPREADSHEET_DOC);
+    await deleteDoc(ref);
+    recordQuotaUsage({ writes: 1 });
+  } catch (err) {
+    console.warn('Failed to delete spreadsheet URL from Firestore:', err);
+    throw err;
+  }
+}
+
+const CRITERIA_DOC = 'criteria_config';
+
+/**
+ * Real-time listener for evaluation criteria
+ */
+export function listenToCriteria(
+  onUpdate: (criteria: EvaluationCriteriaConfig) => void,
+  onError?: (err: Error) => void
+) {
+  try {
+    const ref = doc(db, SETTINGS_COL, CRITERIA_DOC);
+    return onSnapshot(
+      ref,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data() as EvaluationCriteriaConfig;
+          onUpdate({
+            positiveCriteria: Array.isArray(data.positiveCriteria)
+              ? data.positiveCriteria
+              : DEFAULT_EVALUATION_CRITERIA.positiveCriteria,
+            negativeCriteria: Array.isArray(data.negativeCriteria)
+              ? data.negativeCriteria
+              : DEFAULT_EVALUATION_CRITERIA.negativeCriteria,
+            updatedAt: data.updatedAt,
+          });
+        } else {
+          onUpdate(DEFAULT_EVALUATION_CRITERIA);
+        }
+        if (!snapshot.metadata.fromCache) {
+          recordQuotaUsage({ reads: 1 });
+        }
+      },
+      (error) => {
+        console.warn('Criteria snapshot listener error:', error);
+        if (onError) onError(error);
+      }
+    );
+  } catch (err) {
+    console.warn('listenToCriteria failed, using default:', err);
+    return () => {};
+  }
+}
+
+/**
+ * Save evaluation criteria in Firestore
+ */
+export async function saveCriteriaInDb(criteria: EvaluationCriteriaConfig): Promise<void> {
+  try {
+    const ref = doc(db, SETTINGS_COL, CRITERIA_DOC);
+    const payload = {
+      positiveCriteria: criteria.positiveCriteria,
+      negativeCriteria: criteria.negativeCriteria,
+      updatedAt: new Date().toISOString(),
+    };
+    await setDoc(ref, payload, { merge: true });
+    recordQuotaUsage({ writes: 1 });
+  } catch (err) {
+    console.warn('Failed to save criteria to Firestore:', err);
+    throw err;
+  }
 }
 
 const SCHEDULES_COL = 'schedules';
@@ -1015,6 +1092,88 @@ export async function updateStudentMeetingScoreInDb(
     recordQuotaUsage({ writes: 1 });
   } catch (err) {
     console.warn('Failed to update student meeting score in db:', err);
+  }
+}
+
+/**
+ * Reset student evaluation scores and meeting scores in Firestore.
+ * IMPORTANT: Only resets meetings that do NOT have activeDate set in schedules!
+ * Meetings with a configured date maintain their recorded scores and notes.
+ */
+export async function resetAllStudentScoresInDb(
+  schedules: MeetingSchedule[] = []
+): Promise<number> {
+  try {
+    const snap = await getDocs(collection(db, STUDENTS_COL));
+    if (snap.empty) return 0;
+
+    // Identify meeting indexes that have activeDate configured
+    const configuredIndexes = new Set<number>();
+    schedules.forEach((s) => {
+      if (s.activeDate && s.activeDate.trim() !== '') {
+        configuredIndexes.add(s.meetingNumber - 1);
+      }
+    });
+
+    const chunkSize = 400;
+    const docs = snap.docs;
+    for (let i = 0; i < docs.length; i += chunkSize) {
+      const batch = writeBatch(db);
+      docs.slice(i, i + chunkSize).forEach((d) => {
+        const data = d.data() as Student;
+        const currentScores =
+          data.meetingScores && data.meetingScores.length === 20
+            ? [...data.meetingScores]
+            : Array(20).fill(null);
+        const currentNotes =
+          data.meetingNotes && data.meetingNotes.length === 20
+            ? [...data.meetingNotes]
+            : Array(20).fill(null);
+
+        // Reset ONLY meetings that DO NOT have a date configured
+        for (let m = 0; m < 20; m++) {
+          if (!configuredIndexes.has(m)) {
+            currentScores[m] = null;
+            currentNotes[m] = null;
+          }
+        }
+
+        // Recompute student average score exclusively from configured meetings
+        const validScores: number[] = [];
+        for (let m = 0; m < 20; m++) {
+          if (configuredIndexes.has(m)) {
+            const sc = currentScores[m];
+            if (typeof sc === 'number' && sc !== null && sc > 0) {
+              validScores.push(sc);
+            }
+          }
+        }
+
+        const avgScore =
+          validScores.length > 0
+            ? Math.round(validScores.reduce((sum, val) => sum + val, 0) / validScores.length)
+            : 0;
+
+        batch.update(d.ref, {
+          score: avgScore,
+          meetingScores: currentScores,
+          meetingNotes: currentNotes,
+          notes: configuredIndexes.has(0) ? (currentNotes[0] || data.notes || '') : '',
+          lastUpdated: new Date().toISOString(),
+        });
+      });
+      await batch.commit();
+    }
+    recordQuotaUsage({ writes: docs.length });
+    await addSystemLog(
+      'RESET_PENILAIAN',
+      `Mereset nilai pertemuan tanpa jadwal untuk ${docs.length} siswa (${configuredIndexes.size} pertemuan berjadwal tetap aman).`,
+      'ADMIN123'
+    );
+    return docs.length;
+  } catch (err) {
+    console.error('Failed to reset student scores in Firestore:', err);
+    throw err;
   }
 }
 

@@ -52,7 +52,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="min-w-0 flex flex-col justify-center">
               <div className="flex items-center space-x-2">
                 <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-900/90 text-emerald-200 border border-emerald-600/50 shrink-0">
-                  {activePage === 'admin-portal' ? 'Panel admin' : 'Guru Penilai'}
+                  {activePage === 'admin-portal' ? 'Panel Admin' : activePage === 'student-view' ? 'Portal Siswa' : 'Guru Penilai'}
                 </span>
                 <span className="hidden sm:inline-flex items-center space-x-1 text-[11px] text-emerald-200">
                   <span
@@ -72,33 +72,50 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Action buttons & User profile */}
           <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
             {currentUser && currentUser.role === 'admin' && (
-              <div className="flex items-center space-x-1 bg-emerald-900/70 p-0.5 sm:p-1 rounded-xl border border-emerald-700">
+              <div className="flex items-center space-x-0.5 sm:space-x-1 bg-emerald-900/80 p-0.5 sm:p-1 rounded-xl border border-emerald-600/70 shadow-inner">
                 <button
                   type="button"
                   onClick={() => onNavigate('admin-portal')}
-                  className={`flex items-center space-x-1 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer ${
+                  className={`flex items-center justify-center space-x-0 sm:space-x-1 p-1.5 sm:px-3 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer ${
                     activePage === 'admin-portal'
-                      ? 'bg-white text-emerald-900 shadow-xs'
+                      ? 'bg-white text-emerald-950 shadow-xs'
                       : 'text-emerald-200 hover:text-white hover:bg-emerald-700/50'
                   }`}
-                  title="Portal Admin"
+                  title="Panel Admin"
+                  aria-label="Panel Admin"
                 >
-                  <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden xs:inline">Admin</span>
+                  <ShieldCheck className="w-4 h-4 sm:w-3.5 sm:h-3.5 shrink-0" />
+                  <span className="hidden sm:inline">Admin</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => onNavigate('dashboard')}
-                  className={`flex items-center space-x-1 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer ${
+                  className={`flex items-center justify-center space-x-0 sm:space-x-1 p-1.5 sm:px-3 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer ${
                     activePage === 'dashboard' || activePage === 'class-detail'
-                      ? 'bg-white text-emerald-900 shadow-xs'
+                      ? 'bg-white text-emerald-950 shadow-xs'
                       : 'text-emerald-200 hover:text-white hover:bg-emerald-700/50'
                   }`}
-                  title="Dashboard Kelas"
+                  title="Panel Guru"
+                  aria-label="Panel Guru"
                 >
-                  <LayoutDashboard className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden xs:inline">Kelas</span>
+                  <LayoutDashboard className="w-4 h-4 sm:w-3.5 sm:h-3.5 shrink-0" />
+                  <span className="hidden sm:inline">Guru</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onNavigate('student-view')}
+                  className={`flex items-center justify-center space-x-0 sm:space-x-1 p-1.5 sm:px-3 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer ${
+                    activePage === 'student-view'
+                      ? 'bg-white text-emerald-950 shadow-xs ring-2 ring-emerald-300'
+                      : 'text-emerald-200 hover:text-white hover:bg-emerald-700/50'
+                  }`}
+                  title="Tampilan Siswa"
+                  aria-label="Tampilan Siswa"
+                >
+                  <User className="w-4 h-4 sm:w-3.5 sm:h-3.5 shrink-0" />
+                  <span className="hidden sm:inline">Siswa</span>
                 </button>
               </div>
             )}

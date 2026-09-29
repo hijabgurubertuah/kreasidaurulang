@@ -1,9 +1,10 @@
 import React from 'react';
 import { LogOut, Award } from 'lucide-react';
-import { Student } from '../types';
+import { Student, MeetingSchedule } from '../types';
 
 interface StudentPortalViewProps {
   student: Student;
+  schedules?: MeetingSchedule[];
   onLogout: () => void;
 }
 
@@ -58,7 +59,7 @@ export const getQuoteForScore = (score: number, seedStr: string) => {
 // 60 = Ungu (Purple)
 // <60 (50) = Merah (Red)
 export const getScoreColorScheme = (score: number | null) => {
-  if (score === null || score === undefined) {
+  if (score === null || score === undefined || score === 0) {
     return {
       card: 'bg-slate-100 text-slate-400 border-slate-300 border-dashed',
       textScore: 'text-slate-300',
@@ -156,25 +157,31 @@ export const getScoreColorScheme = (score: number | null) => {
 
 export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
   student,
+  schedules = [],
   onLogout,
 }) => {
-  // Calculate average score based on filled meetings (up to 20 meetings)
+  // Calculate average score based on filled meetings with activeDate configured
   const meetingScores = student.meetingScores || [];
-  const validScores = meetingScores.filter(
-    (s): s is number => typeof s === 'number' && s !== null
-  );
+  const validScores: number[] = [];
+  
+  for (let i = 0; i < 20; i++) {
+    // Penilaian hanya berlaku pada kolom yang di-set tanggal
+    const sched = schedules.find((s) => s.meetingNumber === i + 1);
+    const isDateConfigured = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
+    if (isDateConfigured && typeof meetingScores[i] === 'number' && meetingScores[i] !== null && (meetingScores[i] as number) > 0) {
+      validScores.push(meetingScores[i] as number);
+    }
+  }
 
-  // If no explicit meeting scores array exists, use student.score as Pertemuan 1
-  const effectiveValidScores =
-    validScores.length > 0 ? validScores : [student.score];
-  const totalCompletedMeetings = effectiveValidScores.length;
-  const averageScore = Math.round(
-    effectiveValidScores.reduce((sum, val) => sum + val, 0) /
-      totalCompletedMeetings
-  );
+  const totalCompletedMeetings = validScores.length;
+  const averageScore = totalCompletedMeetings > 0
+    ? Math.round(validScores.reduce((sum, val) => sum + val, 0) / totalCompletedMeetings)
+    : (student.score && student.score > 0 ? student.score : null);
 
   const heroStyle = getScoreColorScheme(averageScore);
-  const selectedQuote = getQuoteForScore(averageScore, student.nisn || student.id);
+  const selectedQuote = averageScore !== null
+    ? getQuoteForScore(averageScore, student.nisn || student.id)
+    : 'Penilaian kokurikuler belum dimulai. Pantau jadwal pertemuan untuk melihat hasil penilaian sikap.';
 
   return (
     <div className="w-full max-w-4xl mx-auto px-3 sm:px-6 py-4 space-y-4 animate-fadeIn">
@@ -205,10 +212,10 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
 
         <div className="flex flex-col items-center justify-center bg-black/15 backdrop-blur-md px-6 py-3.5 rounded-2xl border border-white/20 min-w-[160px] z-10 shrink-0">
           <div className="text-4xl sm:text-5xl font-black tracking-tight">
-            {averageScore}
+            {averageScore !== null ? averageScore : '-'}
           </div>
           <div className={`mt-2 px-4 py-1 rounded-full text-xs sm:text-sm font-black uppercase tracking-wider border animate-pulse shadow-xs ${heroStyle.heroBadge}`}>
-            {heroStyle.predicate}
+            {averageScore !== null ? heroStyle.predicate : 'Belum Ada Penilaian'}
           </div>
         </div>
 
@@ -239,12 +246,12 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-5">
           {Array.from({ length: 20 }, (_, idx) => {
             const meetingNum = idx + 1;
+            const sched = schedules.find((s) => s.meetingNumber === meetingNum);
+            const isDateConfigured = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
             let score: number | null = null;
 
-            if (meetingScores[idx] !== undefined && meetingScores[idx] !== null) {
+            if (isDateConfigured && meetingScores[idx] !== undefined && meetingScores[idx] !== null && meetingScores[idx] > 0) {
               score = meetingScores[idx];
-            } else if (idx === 0) {
-              score = student.score;
             }
 
             const itemStyle = getScoreColorScheme(score);
