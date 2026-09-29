@@ -2,6 +2,8 @@
  * Utility helpers for Meeting Schedules and Date-based Locking
  */
 
+import { MeetingSchedule } from '../types';
+
 export interface MeetingLockStatus {
   isConfigured: boolean;
   isOpenToday: boolean;
@@ -68,13 +70,13 @@ export function getMeetingLockStatus(activeDate?: string): MeetingLockStatus {
   if (!isConfigured) {
     return {
       isConfigured: false,
-      isOpenToday: false,
+      isOpenToday: true, // Terbuka untuk diisi uji coba oleh guru
       isPast: false,
       isFuture: false,
-      statusLabel: '🔒 Terkunci (Tanggal Belum Diatur)',
+      statusLabel: 'ℹ️ Mode Uji Coba (Tanggal Belum Diatur)',
       badgeClass: 'bg-amber-100 text-amber-900 border-amber-300',
       dotColorClass: 'bg-amber-500',
-      description: 'Pertemuan ini belum memiliki jadwal tanggal aktif. Penilaian tidak dapat diisi atau diubah.',
+      description: 'Pertemuan ini belum di-set tanggalnya. Nilai dapat ditambah/dikurang oleh guru untuk Uji Coba, tetapi TIDAK akan terkirim ke nilai akhir siswa.',
       formattedDate: '-',
     };
   }
@@ -127,4 +129,49 @@ export function getMeetingLockStatus(activeDate?: string): MeetingLockStatus {
     description: `Pertemuan ini akan otomatis terbuka untuk penilaian pada tanggal ${formatted}. Saat ini masih terkunci.`,
     formattedDate: formatted,
   };
+}
+
+/**
+ * Checks if a meeting has been opened (activeDate is set and is today or already passed).
+ * If activeDate is empty/unconfigured or is in the future, returns false (still locked).
+ */
+export function isMeetingOpened(schedule?: MeetingSchedule): boolean {
+  if (!schedule || !schedule.activeDate || schedule.activeDate.trim() === '') {
+    return false;
+  }
+  const todayLocal = getLocalDateString();
+  const todayUTC = new Date().toISOString().split('T')[0];
+  const dateStr = schedule.activeDate.trim();
+  return dateStr <= todayLocal || dateStr <= todayUTC;
+}
+
+/**
+ * Calculate student average score ONLY from meetings that have opened.
+ * Unopened/locked meetings are not counted into student scores.
+ */
+export function calculateStudentAverageScore(
+  meetingScores: (number | null)[] = [],
+  meetingAbsences: (boolean | null)[] = [],
+  schedules: MeetingSchedule[] = [],
+  fallbackScore: number = 80
+): number {
+  const validScores: number[] = [];
+
+  for (let i = 0; i < 20; i++) {
+    const sched = schedules.find((s) => s.meetingNumber === i + 1);
+    if (isMeetingOpened(sched)) {
+      if (meetingAbsences[i] === true) {
+        validScores.push(0);
+      } else {
+        const val = meetingScores[i];
+        validScores.push(typeof val === 'number' && val !== null ? val : 80);
+      }
+    }
+  }
+
+  if (validScores.length === 0) {
+    return fallbackScore;
+  }
+
+  return Math.round(validScores.reduce((sum, val) => sum + val, 0) / validScores.length);
 }

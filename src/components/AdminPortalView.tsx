@@ -36,6 +36,9 @@ import {
   ListChecks,
   PlusCircle,
   MinusCircle,
+  GripVertical,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import {
   ClassRoom,
@@ -49,6 +52,7 @@ import {
 import { parseStudentCsv, ParsedCsvResult } from '../utils/csvParser';
 import { downloadSampleCsvTemplate } from '../utils/excelExport';
 import { getScoreColorScheme, getQuoteForScore } from './StudentPortalView';
+import { isMeetingOpened, formatIndonesianDate } from '../utils/scheduleHelper';
 import {
   parseGoogleSheetsUrl,
   fetchGoogleSheetCsv,
@@ -398,11 +402,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     setHasCriteriaChanges(true);
   };
 
-  const handleDeletePositiveCriterion = (id: string) => {
-    setLocalPositiveCriteria((prev) => prev.filter((item) => item.id !== id));
-    setHasCriteriaChanges(true);
-  };
-
   const handleAddNegativeCriterion = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const cleanTitle = newNegTitle.trim();
@@ -418,9 +417,81 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     setHasCriteriaChanges(true);
   };
 
-  const handleDeleteNegativeCriterion = (id: string) => {
-    setLocalNegativeCriteria((prev) => prev.filter((item) => item.id !== id));
+  // Reorder functions for criteria (drag & drop / long-press / move up-down)
+  const handleMovePositiveCriterion = (fromIndex: number, toIndex: number) => {
+    if (toIndex < 0 || toIndex >= localPositiveCriteria.length || fromIndex === toIndex) return;
+    setLocalPositiveCriteria((prev) => {
+      const updated = [...prev];
+      const [moved] = updated.splice(fromIndex, 1);
+      updated.splice(toIndex, 0, moved);
+      return updated;
+    });
     setHasCriteriaChanges(true);
+  };
+
+  const handleMoveNegativeCriterion = (fromIndex: number, toIndex: number) => {
+    if (toIndex < 0 || toIndex >= localNegativeCriteria.length || fromIndex === toIndex) return;
+    setLocalNegativeCriteria((prev) => {
+      const updated = [...prev];
+      const [moved] = updated.splice(fromIndex, 1);
+      updated.splice(toIndex, 0, moved);
+      return updated;
+    });
+    setHasCriteriaChanges(true);
+  };
+
+  // State for drag and drop & touch long-press
+  const [draggedPosIndex, setDraggedPosIndex] = useState<number | null>(null);
+  const [dragOverPosIndex, setDragOverPosIndex] = useState<number | null>(null);
+
+  const [draggedNegIndex, setDraggedNegIndex] = useState<number | null>(null);
+  const [dragOverNegIndex, setDragOverNegIndex] = useState<number | null>(null);
+
+  // Long press for touch devices
+  const touchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const touchStartIndexRef = useRef<number | null>(null);
+  const [touchActiveItem, setTouchActiveItem] = useState<{ type: 'plus' | 'minus'; index: number } | null>(null);
+
+  const handleTouchStartCriterion = (type: 'plus' | 'minus', index: number) => {
+    touchStartIndexRef.current = index;
+    if (touchTimerRef.current) clearTimeout(touchTimerRef.current);
+    touchTimerRef.current = setTimeout(() => {
+      setTouchActiveItem({ type, index });
+      if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+        try { navigator.vibrate(35); } catch (_) {}
+      }
+    }, 220);
+  };
+
+  const handleTouchEndCriterion = () => {
+    if (touchTimerRef.current) {
+      clearTimeout(touchTimerRef.current);
+      touchTimerRef.current = null;
+    }
+    setTouchActiveItem(null);
+    touchStartIndexRef.current = null;
+  };
+
+  const handleTouchMoveCriterion = (e: React.TouchEvent, type: 'plus' | 'minus') => {
+    if (!touchActiveItem || touchActiveItem.type !== type) return;
+    const touch = e.touches[0];
+    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+    const targetRow = element?.closest('[data-criteria-index]');
+    if (targetRow) {
+      const targetIdxStr = targetRow.getAttribute('data-criteria-index');
+      const targetType = targetRow.getAttribute('data-criteria-type');
+      if (targetIdxStr !== null && targetType === type) {
+        const targetIdx = parseInt(targetIdxStr, 10);
+        if (!isNaN(targetIdx) && targetIdx !== touchActiveItem.index) {
+          if (type === 'plus') {
+            handleMovePositiveCriterion(touchActiveItem.index, targetIdx);
+          } else {
+            handleMoveNegativeCriterion(touchActiveItem.index, targetIdx);
+          }
+          setTouchActiveItem({ type, index: targetIdx });
+        }
+      }
+    }
   };
 
   const handleSaveCriteriaClick = async () => {
@@ -445,15 +516,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     } finally {
       setIsSavingCriteria(false);
     }
-  };
-
-  const handleResetCriteriaToDefault = () => {
-    if (!window.confirm('Kembalikan daftar kriteria penilai ke default modul Kokurikuler Daur Ulang?')) {
-      return;
-    }
-    setLocalPositiveCriteria(DEFAULT_EVALUATION_CRITERIA.positiveCriteria);
-    setLocalNegativeCriteria(DEFAULT_EVALUATION_CRITERIA.negativeCriteria);
-    setHasCriteriaChanges(true);
   };
 
   // Simpan link spreadsheet ke Firebase
@@ -753,22 +815,25 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
 
     const rows = filteredStudents.map((st, idx) => {
       const meetingScores = st.meetingScores || [];
+      const meetingAbsences = st.meetingAbsences || [];
       const validScores: number[] = [];
       for (let i = 0; i < 20; i++) {
         const sched = schedules.find((s) => s.meetingNumber === i + 1);
-        const isDateSet = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
-        if (isDateSet) {
-          const raw = meetingScores[i];
-          const sc = typeof raw === 'number' && raw !== null && (raw as number) > 0 ? (raw as number) : 80;
-          validScores.push(sc);
+        if (isMeetingOpened(sched)) {
+          if (meetingAbsences[i] === true) {
+            validScores.push(0);
+          } else {
+            const raw = meetingScores[i];
+            const sc = typeof raw === 'number' && raw !== null ? raw : 80;
+            validScores.push(sc);
+          }
         }
       }
 
-      const effectiveValidScores =
-        validScores.length > 0 ? validScores : (st.score > 0 ? [st.score] : [80]);
+      const effectiveValidScores = validScores;
       const avgScore = effectiveValidScores.length > 0
         ? Math.round(effectiveValidScores.reduce((sum, val) => sum + val, 0) / effectiveValidScores.length)
-        : 80;
+        : (st.score > 0 ? st.score : 80);
 
       const rowData = [
         String(idx + 1),
@@ -778,16 +843,18 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
       ];
 
       for (let i = 0; i < 20; i++) {
-        let mScore: any = '';
+        let mScoreStr = '-';
         const sched = schedules.find((s) => s.meetingNumber === i + 1);
-        const isDateSet = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
-        if (isDateSet) {
-          mScore =
-            meetingScores[i] !== undefined && meetingScores[i] !== null && (meetingScores[i] as number) > 0
-              ? meetingScores[i]
-              : 80;
+        if (isMeetingOpened(sched)) {
+          if (meetingAbsences[i] === true) {
+            mScoreStr = '0 (Absen)';
+          } else {
+            const raw = meetingScores[i];
+            const sc = typeof raw === 'number' && raw !== null ? raw : 80;
+            mScoreStr = String(sc);
+          }
         }
-        rowData.push(mScore !== '' ? String(mScore) : '-');
+        rowData.push(mScoreStr);
       }
 
       rowData.push(String(avgScore));
@@ -2212,54 +2279,37 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
       {/* TAB 7: KRITERIA PENILAIAN SIKAP */}
       {activeTab === 'criteria' && (
         <div className="space-y-4">
-          {/* Header Card with Save to Firebase Button */}
-          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Header Action Bar with Save to Firebase Button */}
+          <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 shadow-xs flex items-center justify-between gap-3">
             <div className="flex items-center space-x-2.5">
-              <div className="p-2.5 bg-emerald-50 rounded-xl text-emerald-700 shrink-0">
-                <ListChecks className="w-5 h-5" />
+              <div className="p-2 bg-emerald-50 rounded-xl text-emerald-700 shrink-0">
+                <ListChecks className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
-              <div>
-                <h3 className="text-xs sm:text-sm font-black text-slate-900 leading-tight">
-                  Kriteria Penilaian Sikap (P5 Daur Ulang)
-                </h3>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Tersinkronisasi otomatis ke sidebar panel guru secara real-time setelah klik simpan
-                </p>
-              </div>
+              <span className="text-xs font-semibold text-slate-600">
+                Tekan lama / seret untuk mengatur urutan posisi
+              </span>
             </div>
 
-            <div className="flex items-center space-x-2 self-end sm:self-center">
-              <button
-                type="button"
-                onClick={handleResetCriteriaToDefault}
-                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 active:scale-95"
-                title="Kembalikan daftar kriteria ke default bawaan modul"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span className="hidden xs:inline">Reset Default</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSaveCriteriaClick}
-                disabled={isSavingCriteria}
-                className={`flex items-center justify-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-black shadow-md transition-all cursor-pointer active:scale-95 ${
-                  hasCriteriaChanges
-                    ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 ring-2 ring-amber-300 animate-pulse'
-                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                }`}
-                title="Simpan kriteria ke Firebase Firestore agar terlihat oleh semua guru"
-              >
-                <Save className={`w-3.5 h-3.5 ${isSavingCriteria ? 'animate-spin' : ''}`} />
-                <span>
-                  {isSavingCriteria
-                    ? 'Menyimpan...'
-                    : hasCriteriaChanges
-                    ? 'Simpan ke Firebase *'
-                    : 'Simpan ke Firebase'}
-                </span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleSaveCriteriaClick}
+              disabled={isSavingCriteria}
+              className={`flex items-center justify-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-black shadow-md transition-all cursor-pointer active:scale-95 shrink-0 ${
+                hasCriteriaChanges
+                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 ring-2 ring-amber-300 animate-pulse'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+              }`}
+              title="Simpan kriteria ke Firebase Firestore agar terlihat oleh semua guru"
+            >
+              <Save className={`w-3.5 h-3.5 ${isSavingCriteria ? 'animate-spin' : ''}`} />
+              <span>
+                {isSavingCriteria
+                  ? 'Menyimpan...'
+                  : hasCriteriaChanges
+                  ? 'Simpan ke Firebase *'
+                  : 'Simpan ke Firebase'}
+              </span>
+            </button>
           </div>
 
           {/* Grid 2 Kolom: Kriteria Penambah Poin (+) dan Kriteria Pengurang Poin (-) */}
@@ -2300,75 +2350,147 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
               </form>
 
               {/* Daftar Kriteria Positif */}
-              <div className="space-y-2 flex-1 max-h-[380px] overflow-y-auto pr-1 scrollbar-thin">
-                {localPositiveCriteria.map((item, idx) => (
-                  <React.Fragment key={item.id || `pos-${idx}`}>
-                    {editingCriterionId === item.id ? (
-                      <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-300 space-y-2 animate-fadeIn">
-                        <div className="relative">
-                          <input
-                            type="text"
-                            value={editCriterionTitle}
-                            onChange={(e) => setEditCriterionTitle(e.target.value)}
-                            placeholder="Ubah kriteria penambah poin..."
-                            className="w-full pl-2.5 pr-14 py-1.5 text-xs rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
-                            autoFocus
-                          />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-black select-none">
-                            +10
-                          </span>
+              <div
+                onTouchMove={(e) => handleTouchMoveCriterion(e, 'plus')}
+                className="space-y-2 flex-1 max-h-[380px] overflow-y-auto pr-1 scrollbar-thin select-none"
+              >
+                {localPositiveCriteria.map((item, idx) => {
+                  const isTouchActive = touchActiveItem?.type === 'plus' && touchActiveItem.index === idx;
+                  const isDragOver = dragOverPosIndex === idx;
+
+                  return (
+                    <div
+                      key={item.id || `pos-${idx}`}
+                      data-criteria-index={idx}
+                      data-criteria-type="plus"
+                      draggable={editingCriterionId !== item.id}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('text/plain', String(idx));
+                        setDraggedPosIndex(idx);
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        if (dragOverPosIndex !== idx) setDragOverPosIndex(idx);
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverPosIndex === idx) setDragOverPosIndex(null);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (draggedPosIndex !== null && draggedPosIndex !== idx) {
+                          handleMovePositiveCriterion(draggedPosIndex, idx);
+                        }
+                        setDraggedPosIndex(null);
+                        setDragOverPosIndex(null);
+                      }}
+                      onDragEnd={() => {
+                        setDraggedPosIndex(null);
+                        setDragOverPosIndex(null);
+                      }}
+                      className={`transition-all ${
+                        isTouchActive
+                          ? 'ring-2 ring-emerald-500 bg-emerald-50 rounded-xl shadow-md scale-[1.01]'
+                          : isDragOver
+                          ? 'border-t-2 border-t-emerald-600'
+                          : ''
+                      }`}
+                    >
+                      {editingCriterionId === item.id ? (
+                        <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-300 space-y-2 animate-fadeIn">
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={editCriterionTitle}
+                              onChange={(e) => setEditCriterionTitle(e.target.value)}
+                              placeholder="Ubah kriteria penambah poin..."
+                              className="w-full pl-2.5 pr-14 py-1.5 text-xs rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                              autoFocus
+                            />
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-black select-none">
+                              +10
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-end space-x-1.5">
+                            <button
+                              type="button"
+                              onClick={handleCancelEditCriterion}
+                              className="px-2.5 py-1 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                            >
+                              Batal
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEditedCriterion(item.id, 'plus')}
+                              disabled={!editCriterionTitle.trim()}
+                              className="flex items-center space-x-1 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Terapkan</span>
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-end space-x-1.5">
-                          <button
-                            type="button"
-                            onClick={handleCancelEditCriterion}
-                            className="px-2.5 py-1 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                      ) : (
+                        <div className="flex items-center justify-between gap-1.5 p-2 rounded-xl bg-slate-50 hover:bg-emerald-50/50 border border-slate-200 transition-colors group">
+                          {/* Drag Grip Handle & Touch Long-Press */}
+                          <div
+                            onTouchStart={() => handleTouchStartCriterion('plus', idx)}
+                            onTouchEnd={handleTouchEndCriterion}
+                            onTouchCancel={handleTouchEndCriterion}
+                            className="p-1 text-slate-400 hover:text-emerald-700 cursor-grab active:cursor-grabbing shrink-0 select-none touch-none"
+                            title="Tekan lama / drag naik turun untuk memindahkan posisi"
                           >
-                            Batal
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleSaveEditedCriterion(item.id, 'plus')}
-                            disabled={!editCriterionTitle.trim()}
-                            className="flex items-center space-x-1 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            <span>Terapkan</span>
-                          </button>
+                            <GripVertical className="w-4 h-4" />
+                          </div>
+
+                          {/* Quick Up/Down Buttons */}
+                          <div className="flex flex-col -space-y-0.5 shrink-0">
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={() => handleMovePositiveCriterion(idx, idx - 1)}
+                              className="p-0.5 text-slate-400 hover:text-emerald-700 disabled:opacity-20 cursor-pointer disabled:cursor-not-allowed transition-colors"
+                              title="Pindahkan ke atas"
+                            >
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === localPositiveCriteria.length - 1}
+                              onClick={() => handleMovePositiveCriterion(idx, idx + 1)}
+                              className="p-0.5 text-slate-400 hover:text-emerald-700 disabled:opacity-20 cursor-pointer disabled:cursor-not-allowed transition-colors"
+                              title="Pindahkan ke bawah"
+                            >
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          {/* Criteria Badge & Title */}
+                          <div className="flex items-start space-x-2 min-w-0 flex-1 ml-0.5">
+                            <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-black shadow-xs">
+                              +10
+                            </span>
+                            <p className="text-xs text-slate-800 font-medium leading-snug break-words">
+                              {item.title}
+                            </p>
+                          </div>
+
+                          {/* Action Buttons: Edit Only (Delete 'x' Removed) */}
+                          <div className="flex items-center space-x-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditCriterion(item)}
+                              className="p-1 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                              title="Edit kriteria ini"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-start justify-between gap-2 p-2.5 rounded-xl bg-slate-50 hover:bg-emerald-50/50 border border-slate-200 transition-colors group">
-                        <div className="flex items-start space-x-2 min-w-0">
-                          <span className="shrink-0 px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-black shadow-xs">
-                            +10
-                          </span>
-                          <p className="text-xs text-slate-800 font-medium leading-snug">
-                            {item.title}
-                          </p>
-                        </div>
-                        <div className="flex items-center space-x-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleStartEditCriterion(item)}
-                            className="p-1 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
-                            title="Edit kriteria ini"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeletePositiveCriterion(item.id)}
-                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                            title="Hapus kriteria ini"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </React.Fragment>
-                ))}
+                      )}
+                    </div>
+                  );
+                })}
 
                 {localPositiveCriteria.length === 0 && (
                   <div className="p-6 text-center text-xs text-slate-400 italic">
@@ -2414,75 +2536,147 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
               </form>
 
               {/* Daftar Kriteria Negatif */}
-              <div className="space-y-2 flex-1 max-h-[380px] overflow-y-auto pr-1 scrollbar-thin">
-                {localNegativeCriteria.map((item, idx) => (
-                  <React.Fragment key={item.id || `neg-${idx}`}>
-                    {editingCriterionId === item.id ? (
-                      <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 space-y-2 animate-fadeIn">
-                        <div className="relative">
-                          <input
-                            type="text"
-                            value={editCriterionTitle}
-                            onChange={(e) => setEditCriterionTitle(e.target.value)}
-                            placeholder="Ubah kriteria pengurang poin..."
-                            className="w-full pl-2.5 pr-14 py-1.5 text-xs rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500 font-medium"
-                            autoFocus
-                          />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black select-none">
-                            -10
-                          </span>
+              <div
+                onTouchMove={(e) => handleTouchMoveCriterion(e, 'minus')}
+                className="space-y-2 flex-1 max-h-[380px] overflow-y-auto pr-1 scrollbar-thin select-none"
+              >
+                {localNegativeCriteria.map((item, idx) => {
+                  const isTouchActive = touchActiveItem?.type === 'minus' && touchActiveItem.index === idx;
+                  const isDragOver = dragOverNegIndex === idx;
+
+                  return (
+                    <div
+                      key={item.id || `neg-${idx}`}
+                      data-criteria-index={idx}
+                      data-criteria-type="minus"
+                      draggable={editingCriterionId !== item.id}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('text/plain', String(idx));
+                        setDraggedNegIndex(idx);
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        if (dragOverNegIndex !== idx) setDragOverNegIndex(idx);
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverNegIndex === idx) setDragOverNegIndex(null);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (draggedNegIndex !== null && draggedNegIndex !== idx) {
+                          handleMoveNegativeCriterion(draggedNegIndex, idx);
+                        }
+                        setDraggedNegIndex(null);
+                        setDragOverNegIndex(null);
+                      }}
+                      onDragEnd={() => {
+                        setDraggedNegIndex(null);
+                        setDragOverNegIndex(null);
+                      }}
+                      className={`transition-all ${
+                        isTouchActive
+                          ? 'ring-2 ring-rose-500 bg-rose-50 rounded-xl shadow-md scale-[1.01]'
+                          : isDragOver
+                          ? 'border-t-2 border-t-rose-600'
+                          : ''
+                      }`}
+                    >
+                      {editingCriterionId === item.id ? (
+                        <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 space-y-2 animate-fadeIn">
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={editCriterionTitle}
+                              onChange={(e) => setEditCriterionTitle(e.target.value)}
+                              placeholder="Ubah kriteria pengurang poin..."
+                              className="w-full pl-2.5 pr-14 py-1.5 text-xs rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500 font-medium"
+                              autoFocus
+                            />
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black select-none">
+                              -10
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-end space-x-1.5">
+                            <button
+                              type="button"
+                              onClick={handleCancelEditCriterion}
+                              className="px-2.5 py-1 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                            >
+                              Batal
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEditedCriterion(item.id, 'minus')}
+                              disabled={!editCriterionTitle.trim()}
+                              className="flex items-center space-x-1 px-3 py-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Terapkan</span>
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-end space-x-1.5">
-                          <button
-                            type="button"
-                            onClick={handleCancelEditCriterion}
-                            className="px-2.5 py-1 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                      ) : (
+                        <div className="flex items-center justify-between gap-1.5 p-2 rounded-xl bg-slate-50 hover:bg-rose-50/50 border border-slate-200 transition-colors group">
+                          {/* Drag Grip Handle & Touch Long-Press */}
+                          <div
+                            onTouchStart={() => handleTouchStartCriterion('minus', idx)}
+                            onTouchEnd={handleTouchEndCriterion}
+                            onTouchCancel={handleTouchEndCriterion}
+                            className="p-1 text-slate-400 hover:text-rose-700 cursor-grab active:cursor-grabbing shrink-0 select-none touch-none"
+                            title="Tekan lama / drag naik turun untuk memindahkan posisi"
                           >
-                            Batal
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleSaveEditedCriterion(item.id, 'minus')}
-                            disabled={!editCriterionTitle.trim()}
-                            className="flex items-center space-x-1 px-3 py-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            <span>Terapkan</span>
-                          </button>
+                            <GripVertical className="w-4 h-4" />
+                          </div>
+
+                          {/* Quick Up/Down Buttons */}
+                          <div className="flex flex-col -space-y-0.5 shrink-0">
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={() => handleMoveNegativeCriterion(idx, idx - 1)}
+                              className="p-0.5 text-slate-400 hover:text-rose-700 disabled:opacity-20 cursor-pointer disabled:cursor-not-allowed transition-colors"
+                              title="Pindahkan ke atas"
+                            >
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === localNegativeCriteria.length - 1}
+                              onClick={() => handleMoveNegativeCriterion(idx, idx + 1)}
+                              className="p-0.5 text-slate-400 hover:text-rose-700 disabled:opacity-20 cursor-pointer disabled:cursor-not-allowed transition-colors"
+                              title="Pindahkan ke bawah"
+                            >
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          {/* Criteria Badge & Title */}
+                          <div className="flex items-start space-x-2 min-w-0 flex-1 ml-0.5">
+                            <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black shadow-xs">
+                              -10
+                            </span>
+                            <p className="text-xs text-slate-800 font-medium leading-snug break-words">
+                              {item.title}
+                            </p>
+                          </div>
+
+                          {/* Action Buttons: Edit Only (Delete 'x' Removed) */}
+                          <div className="flex items-center space-x-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditCriterion(item)}
+                              className="p-1 text-slate-400 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Edit kriteria ini"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-start justify-between gap-2 p-2.5 rounded-xl bg-slate-50 hover:bg-rose-50/50 border border-slate-200 transition-colors group">
-                        <div className="flex items-start space-x-2 min-w-0">
-                          <span className="shrink-0 px-2 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black shadow-xs">
-                            -10
-                          </span>
-                          <p className="text-xs text-slate-800 font-medium leading-snug">
-                            {item.title}
-                          </p>
-                        </div>
-                        <div className="flex items-center space-x-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleStartEditCriterion(item)}
-                            className="p-1 text-slate-400 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                            title="Edit kriteria ini"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteNegativeCriterion(item.id)}
-                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                            title="Hapus kriteria ini"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </React.Fragment>
-                ))}
+                      )}
+                    </div>
+                  );
+                })}
 
                 {localNegativeCriteria.length === 0 && (
                   <div className="p-6 text-center text-xs text-slate-400 italic">

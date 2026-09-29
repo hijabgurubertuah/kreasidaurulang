@@ -21,6 +21,7 @@ import {
   DEFAULT_TEACHER_CODES,
   DEFAULT_EVALUATION_CRITERIA,
 } from '../data/defaultData';
+import { isMeetingOpened, calculateStudentAverageScore } from '../utils/scheduleHelper';
 import { recordQuotaUsage, calculateRealtimeStorageSize } from './quotaService';
 
 const STUDENTS_COL = 'students';
@@ -1033,7 +1034,9 @@ export async function updateStudentMeetingScoreInDb(
   studentId: string,
   meetingIndex: number,
   newScore: number,
-  notes?: string
+  notes?: string,
+  isAbsent?: boolean,
+  schedules: MeetingSchedule[] = []
 ) {
   try {
     const studentRef = doc(db, STUDENTS_COL, studentId);
@@ -1044,20 +1047,18 @@ export async function updateStudentMeetingScoreInDb(
     
     let currentMeetingScores: (number | null)[] = Array(20).fill(null);
     let currentMeetingNotes: (string | null)[] = Array(20).fill(null);
-    let currentMainScore = 80;
+    let currentMeetingAbsences: (boolean | null)[] = Array(20).fill(false);
     
     if (snap.exists()) {
       const data = snap.data() as Student;
-      currentMainScore = data.score;
       if (data.meetingScores && data.meetingScores.length === 20) {
         currentMeetingScores = [...data.meetingScores];
-      } else {
-        currentMeetingScores[0] = data.score; // populate meeting 1 as fallback
       }
       if (data.meetingNotes && data.meetingNotes.length === 20) {
         currentMeetingNotes = [...data.meetingNotes];
-      } else {
-        currentMeetingNotes[0] = data.notes || '';
+      }
+      if (data.meetingAbsences && data.meetingAbsences.length === 20) {
+        currentMeetingAbsences = [...data.meetingAbsences];
       }
     }
     
@@ -1066,20 +1067,25 @@ export async function updateStudentMeetingScoreInDb(
     if (notes !== undefined) {
       currentMeetingNotes[meetingIndex] = notes;
     }
+    if (isAbsent !== undefined) {
+      currentMeetingAbsences[meetingIndex] = isAbsent;
+    } else {
+      currentMeetingAbsences[meetingIndex] = newScore === 0;
+    }
     
-    // Compute average score of active sessions
-    const validScores = currentMeetingScores.filter(
-      (s): s is number => typeof s === 'number' && s !== null
+    // Compute average score ONLY of meetings that have opened
+    const avgScore = calculateStudentAverageScore(
+      currentMeetingScores,
+      currentMeetingAbsences,
+      schedules,
+      newScore > 0 ? newScore : 80
     );
-    const avgScore =
-      validScores.length > 0
-        ? Math.round(validScores.reduce((sum, val) => sum + val, 0) / validScores.length)
-        : newScore;
 
     const updatePayload: Partial<Student> = {
       score: avgScore,
       meetingScores: currentMeetingScores,
       meetingNotes: currentMeetingNotes,
+      meetingAbsences: currentMeetingAbsences,
       lastUpdated: new Date().toISOString(),
     };
     
@@ -1129,34 +1135,33 @@ export async function resetAllStudentScoresInDb(
           data.meetingNotes && data.meetingNotes.length === 20
             ? [...data.meetingNotes]
             : Array(20).fill(null);
+        const currentAbsences =
+          data.meetingAbsences && data.meetingAbsences.length === 20
+            ? [...data.meetingAbsences]
+            : Array(20).fill(false);
 
         // Reset ONLY meetings that DO NOT have a date configured
         for (let m = 0; m < 20; m++) {
           if (!configuredIndexes.has(m)) {
             currentScores[m] = null;
             currentNotes[m] = null;
+            currentAbsences[m] = false;
           }
         }
 
-        // Recompute student average score exclusively from configured meetings
-        const validScores: number[] = [];
-        for (let m = 0; m < 20; m++) {
-          if (configuredIndexes.has(m)) {
-            const sc = currentScores[m];
-            const effectiveScore = typeof sc === 'number' && sc !== null && sc > 0 ? sc : 80;
-            validScores.push(effectiveScore);
-          }
-        }
-
-        const avgScore =
-          validScores.length > 0
-            ? Math.round(validScores.reduce((sum, val) => sum + val, 0) / validScores.length)
-            : 80;
+        // Recompute student average score exclusively from opened meetings
+        const avgScore = calculateStudentAverageScore(
+          currentScores,
+          currentAbsences,
+          schedules,
+          80
+        );
 
         batch.update(d.ref, {
           score: avgScore,
           meetingScores: currentScores,
           meetingNotes: currentNotes,
+          meetingAbsences: currentAbsences,
           notes: configuredIndexes.has(0) ? (currentNotes[0] || data.notes || '') : '',
           lastUpdated: new Date().toISOString(),
         });

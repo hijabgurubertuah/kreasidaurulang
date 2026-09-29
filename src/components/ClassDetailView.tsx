@@ -13,11 +13,13 @@ import {
   X,
   Save,
   Calendar,
+  UserCheck,
+  UserX,
 } from 'lucide-react';
 import { ClassRoom, Student, MeetingSchedule } from '../types';
 import { exportClassToExcel, getPredicate } from '../utils/excelExport';
 import { getScoreColorScheme } from './StudentPortalView';
-import { getMeetingLockStatus, formatIndonesianDate } from '../utils/scheduleHelper';
+import { getMeetingLockStatus, formatIndonesianDate, isMeetingOpened } from '../utils/scheduleHelper';
 
 const CLASS_GRADIENTS = [
   // 1. Green (Emerald)
@@ -78,7 +80,13 @@ interface ClassDetailViewProps {
   onBack: () => void;
   onUpdateScore: (studentId: string, newScore: number) => void;
   onUpdateNotes: (studentId: string, notes: string) => void;
-  onUpdateMeetingScore?: (studentId: string, meetingIndex: number, newScore: number, notes?: string) => void;
+  onUpdateMeetingScore?: (
+    studentId: string,
+    meetingIndex: number,
+    newScore: number,
+    notes?: string,
+    isAbsent?: boolean
+  ) => void;
   hasPendingChanges?: boolean;
   pendingChangesCount?: number;
   onSaveToFirebase?: () => Promise<void>;
@@ -168,12 +176,22 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
     );
   }, [classStudents, searchQuery]);
 
+  // Check if student is marked absent in this meeting
+  const isStudentAbsent = (student: Student, idx: number): boolean => {
+    if (student.meetingAbsences && student.meetingAbsences[idx] === true) return true;
+    if (student.meetingScores && student.meetingScores[idx] === 0) return true;
+    return false;
+  };
+
   // Get specific meeting score (0 to 19)
   const getMeetingScore = (student: Student, idx: number): number | null => {
     // Penilaian hanya berlaku pada kolom yang di-set tanggal
     const sched = schedules.find((s) => s.meetingNumber === idx + 1);
     if (!sched || !sched.activeDate || sched.activeDate.trim() === '') {
       return null;
+    }
+    if (isStudentAbsent(student, idx)) {
+      return 0;
     }
     if (student.meetingScores && student.meetingScores[idx] !== undefined && student.meetingScores[idx] !== null && (student.meetingScores[idx] as number) > 0) {
       return student.meetingScores[idx] as number;
@@ -194,6 +212,34 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
     return '';
   };
 
+  // Toggle Hadir vs Tidak Hadir (Absen)
+  const handleToggleAttendance = (student: Student) => {
+    if (!isScoringActive) return; // Prevent edits if locked by schedule or date not set
+    const currentlyAbsent = isStudentAbsent(student, selectedMeetingIndex);
+    const nextAbsent = !currentlyAbsent;
+    const newScore = nextAbsent ? 0 : 80;
+    const currentNotes = getMeetingNotes(student, selectedMeetingIndex);
+    const updatedNotes = nextAbsent
+      ? (currentNotes ? `${currentNotes} (Tidak Hadir)` : 'Tidak Hadir')
+      : currentNotes.replace(/\(Tidak Hadir\)/g, '').trim();
+
+    if (onUpdateMeetingScore) {
+      onUpdateMeetingScore(
+        student.id,
+        selectedMeetingIndex,
+        newScore,
+        updatedNotes,
+        nextAbsent
+      );
+    } else {
+      onUpdateScore(student.id, newScore);
+    }
+    setRecentUpdatedId(student.id);
+    setTimeout(() => {
+      setRecentUpdatedId((prev) => (prev === student.id ? null : prev));
+    }, 1000);
+  };
+
   // Statistics
   const totalCount = classStudents.length;
   const scoredStudents = classStudents
@@ -210,17 +256,19 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
   const handleScoreChange = (student: Student, delta: number) => {
     if (!isScoringActive) return; // Prevent edits if locked by schedule or date not set
     
+    const wasAbsent = isStudentAbsent(student, selectedMeetingIndex);
     const currentMScore = getMeetingScore(student, selectedMeetingIndex);
-    const baseScore = currentMScore !== null ? currentMScore : 80;
+    const baseScore = wasAbsent ? 80 : (currentMScore !== null ? currentMScore : 80);
     const newScore = Math.max(0, Math.min(100, baseScore + delta));
 
-    if (newScore !== currentMScore) {
+    if (newScore !== currentMScore || wasAbsent) {
       if (onUpdateMeetingScore) {
         onUpdateMeetingScore(
           student.id,
           selectedMeetingIndex,
           newScore,
-          getMeetingNotes(student, selectedMeetingIndex)
+          getMeetingNotes(student, selectedMeetingIndex),
+          false
         );
       } else {
         onUpdateScore(student.id, newScore);
@@ -245,8 +293,9 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
     const student = students.find((s) => s.id === studentId);
     if (student) {
       const currentMScore = getMeetingScore(student, selectedMeetingIndex);
+      const isAbsent = isStudentAbsent(student, selectedMeetingIndex);
       if (onUpdateMeetingScore) {
-        onUpdateMeetingScore(studentId, selectedMeetingIndex, currentMScore ?? 80, tempNotes);
+        onUpdateMeetingScore(studentId, selectedMeetingIndex, currentMScore ?? 80, tempNotes, isAbsent);
       } else {
         onUpdateNotes(studentId, tempNotes);
       }
@@ -418,30 +467,41 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
           filteredStudents.map((student, idx) => {
             const mScore = getMeetingScore(student, selectedMeetingIndex);
             const mNotes = getMeetingNotes(student, selectedMeetingIndex);
+            const isAbsent = isStudentAbsent(student, selectedMeetingIndex);
             
-            const predicate = mScore !== null ? getPredicate(mScore) : { text: 'Belum Dinilai', code: '-', color: 'slate' };
+            const predicate = isAbsent
+              ? { text: 'Tidak Hadir', code: 'A', color: 'rose' }
+              : mScore !== null
+              ? getPredicate(mScore)
+              : { text: 'Belum Dinilai', code: '-', color: 'slate' };
             const isUpdatedRecently = recentUpdatedId === student.id;
-            const scoreStyle = getScoreColorScheme(mScore);
+            const scoreStyle = getScoreColorScheme(isAbsent ? 0 : mScore);
 
             return (
               <div
                 key={student.id}
-                className={`p-3 sm:px-4 sm:py-3.5 flex items-center justify-between gap-2 hover:bg-slate-50 transition-colors ${
+                className={`p-3 sm:px-4 sm:py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 hover:bg-slate-50 transition-colors ${
                   isUpdatedRecently ? 'bg-emerald-50/60' : ''
-                }`}
+                } ${isAbsent ? 'bg-rose-50/30' : ''}`}
               >
-                {/* Bagian Kiri: Nomor + Nama Siswa (rata kiri) + NISN */}
-                <div className="flex items-center space-x-2.5 min-w-0 flex-1">
-                  <span className="text-xs font-bold text-slate-400 w-5 shrink-0 text-center">
+                {/* Bagian Kiri: Nomor + Nama Siswa (rata kiri) + NISN + Status Absen */}
+                <div className="flex items-start sm:items-center space-x-2.5 min-w-0 flex-1">
+                  <span className="text-xs font-bold text-slate-400 w-5 shrink-0 text-center pt-0.5 sm:pt-0">
                     {idx + 1}
                   </span>
 
                   <div className="min-w-0 flex-1">
-                    <div className="font-bold text-xs sm:text-sm text-slate-900 truncate flex items-center gap-1.5">
+                    <div className="font-bold text-xs sm:text-sm text-slate-900 truncate flex items-center gap-1.5 flex-wrap">
                       <span className="truncate">{student.name}</span>
-                      {mScore === 100 && (
+                      {mScore === 100 && !isAbsent && (
                         <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 shrink-0">
                           ★ 100
+                        </span>
+                      )}
+                      {isAbsent && (
+                        <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200 shrink-0 flex items-center gap-1">
+                          <UserX className="w-2.5 h-2.5" />
+                          Tidak Hadir
                         </span>
                       )}
                     </div>
@@ -463,24 +523,50 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
                   </div>
                 </div>
 
-                {/* Bagian Kanan: Tombol Catatan + [▼] [ Nilai ] [▲] (Presisi di HP) */}
-                <div className="flex items-center space-x-1.5 shrink-0">
-                  {/* Predikat label di tablet/desktop */}
-                  <span className="hidden md:inline text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
-                    {mScore !== null ? predicate.code : '-'}
-                  </span>
+                {/* Bagian Kanan: Tombol Tandai Hadir/Absen + Tombol Catatan + Kontrol Nilai */}
+                <div className="flex items-center space-x-1.5 shrink-0 self-end sm:self-center">
+                  {/* Tombol Kehadiran (Hadir / Tidak Hadir) */}
+                  <button
+                    type="button"
+                    disabled={!isScoringActive}
+                    onClick={() => handleToggleAttendance(student)}
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center space-x-1 transition-all cursor-pointer active:scale-95 shadow-2xs ${
+                      isAbsent
+                        ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/90'
+                    } ${!isScoringActive ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    title={
+                      !isScoringActive
+                        ? 'Penilaian terkunci'
+                        : isAbsent
+                        ? 'Siswa ditandai Tidak Hadir (0). Klik untuk ubah menjadi Hadir'
+                        : 'Siswa Hadir. Klik untuk menandai Tidak Hadir (Absen)'
+                    }
+                  >
+                    {isAbsent ? (
+                      <>
+                        <UserX className="w-3.5 h-3.5" />
+                        <span>Tidak Hadir</span>
+                      </>
+                    ) : (
+                      <>
+                        <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="hidden xs:inline">Hadir</span>
+                      </>
+                    )}
+                  </button>
 
                   {/* Tombol Catatan */}
                   <button
                     type="button"
                     onClick={() => handleOpenNoteModal(student)}
                     disabled={!isScoringActive}
-                    className={`p-1.5 rounded-lg transition-colors ${
+                    className={`p-1.5 rounded-xl transition-colors ${
                       !isScoringActive
                         ? 'text-slate-300 bg-slate-50 cursor-not-allowed'
-                        : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer'
+                        : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer border border-slate-200/60'
                     }`}
-                    title={isScoringActive ? 'Tambah Catatan' : 'Terkunci'}
+                    title={isScoringActive ? 'Tambah / Edit Catatan' : 'Terkunci'}
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
                   </button>
@@ -493,10 +579,10 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
                     <button
                       type="button"
                       onClick={() => handleScoreChange(student, -10)}
-                      disabled={!isScoringActive || (mScore !== null && mScore <= 0)}
+                      disabled={!isScoringActive || (mScore !== null && mScore <= 0) || isAbsent}
                       aria-label="Kurangi nilai 10"
                       className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-bold text-xs select-none transition-all ${
-                        !isScoringActive || (mScore !== null && mScore <= 0)
+                        !isScoringActive || (mScore !== null && mScore <= 0) || isAbsent
                           ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                           : 'bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white shadow-xs cursor-pointer active:scale-90'
                       }`}
@@ -507,9 +593,15 @@ export const ClassDetailView: React.FC<ClassDetailViewProps> = ({
                     {/* Angka Nilai dengan Latar Berwarna Sesuai Tingkat Nilai */}
                     <div
                       className={`w-9 sm:w-11 px-1 py-1 rounded-lg border text-center flex items-center justify-center font-black text-xs sm:text-sm tracking-tight transition-all duration-300 shadow-2xs ${scoreStyle.card}`}
-                      title={mScore !== null ? `Nilai: ${mScore} (${scoreStyle.predicate})` : 'Belum Dinilai'}
+                      title={
+                        isAbsent
+                          ? 'Tidak Hadir (Nilai: 0)'
+                          : mScore !== null
+                          ? `Nilai: ${mScore} (${scoreStyle.predicate})`
+                          : 'Belum Dinilai'
+                      }
                     >
-                      {mScore !== null ? mScore : '-'}
+                      {isAbsent ? '0' : mScore !== null ? mScore : '-'}
                     </div>
 
                     {/* Tombol Panah Atas (▲) - Hijau */}

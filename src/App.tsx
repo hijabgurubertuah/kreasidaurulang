@@ -23,7 +23,11 @@ import {
   DEFAULT_TEACHER_CODES,
   DEFAULT_EVALUATION_CRITERIA,
 } from './data/defaultData';
-import { getLocalDateString } from './utils/scheduleHelper';
+import {
+  getLocalDateString,
+  isMeetingOpened,
+  calculateStudentAverageScore,
+} from './utils/scheduleHelper';
 import {
   initializeFirestoreIfNeeded,
   listenToStudents,
@@ -218,62 +222,67 @@ export default function App() {
 
   // Update meeting-specific score and notes with immediate Firestore real-time persistence
   const handleUpdateMeetingScore = useCallback(
-    async (studentId: string, meetingIndex: number, newScore: number, notes?: string) => {
-      // ATURAN 1: Penilaian hanya berlaku pada kolom yang di-set tanggal.
-      // Jika tanggal tidak diset maka tidak akan pernah tersimpan ke penilaian.
+    async (
+      studentId: string,
+      meetingIndex: number,
+      newScore: number,
+      notes?: string,
+      isAbsent?: boolean
+    ) => {
+      // Jika tanggal SUDAH diatur, pastikan hanya terbuka pada Hari H (hari ini)
       const sched = schedules.find((s) => s.meetingNumber === meetingIndex + 1);
       const activeDate = sched?.activeDate ? sched.activeDate.trim() : '';
-      if (!activeDate) {
-        console.warn(`Penilaian ditolak: Pertemuan ${meetingIndex + 1} belum diatur tanggalnya. Tidak dapat disimpan.`);
-        return;
+      
+      if (activeDate) {
+        const todayLocal = getLocalDateString();
+        const todayUTC = new Date().toISOString().split('T')[0];
+        const isOpenToday = activeDate === todayLocal || activeDate === todayUTC;
+        if (!isOpenToday) {
+          console.warn(
+            `Penilaian ditolak: Pertemuan ${meetingIndex + 1} terkunci (hanya terbuka otomatis pada ${activeDate}).`
+          );
+          return;
+        }
       }
-
-      // ATURAN 2: Tanggal set auto terbuka pada tanggal itu (hari H).
-      // 1 hari setelah itu (atau sebelum hari H) terkunci kembali secara otomatis.
-      const todayLocal = getLocalDateString();
-      const todayUTC = new Date().toISOString().split('T')[0];
-      const isOpenToday = activeDate === todayLocal || activeDate === todayUTC;
-      if (!isOpenToday) {
-        console.warn(
-          `Penilaian ditolak: Pertemuan ${meetingIndex + 1} terkunci (hanya terbuka otomatis pada ${activeDate}).`
-        );
-        return;
-      }
+      // Jika activeDate belum diatur, izinkan nilai diubah sebagai uji coba (namun calculateStudentAverageScore mengabaikan pertemuan tanpa tanggal)
 
       setStudents((prev) =>
         prev.map((s) => {
           if (s.id !== studentId) return s;
           const currentScores = s.meetingScores && s.meetingScores.length === 20 ? [...s.meetingScores] : Array(20).fill(null);
           const currentNotes = s.meetingNotes && s.meetingNotes.length === 20 ? [...s.meetingNotes] : Array(20).fill(null);
+          const currentAbsences = s.meetingAbsences && s.meetingAbsences.length === 20 ? [...s.meetingAbsences] : Array(20).fill(false);
 
           currentScores[meetingIndex] = newScore;
           if (notes !== undefined) {
             currentNotes[meetingIndex] = notes;
           }
-
-          // Hitung rata-rata hanya dari pertemuan yang memiliki jadwal aktif
-          const validScores: number[] = [];
-          for (let i = 0; i < 20; i++) {
-            const sc = schedules.find((sch) => sch.meetingNumber === i + 1);
-            if (sc?.activeDate && sc.activeDate.trim() !== '') {
-              const val = currentScores[i];
-              const effectiveScore = typeof val === 'number' && val !== null && val > 0 ? val : 80;
-              validScores.push(effectiveScore);
-            }
+          if (isAbsent !== undefined) {
+            currentAbsences[meetingIndex] = isAbsent;
+          } else {
+            currentAbsences[meetingIndex] = newScore === 0;
           }
-          const avgScore = validScores.length > 0 ? Math.round(validScores.reduce((sum, val) => sum + val, 0) / validScores.length) : 80;
+
+          // Hitung rata-rata HANYA dari pertemuan yang SUDAH TERBUKA (activeDate <= hari ini)
+          const avgScore = calculateStudentAverageScore(
+            currentScores,
+            currentAbsences,
+            schedules,
+            newScore > 0 ? newScore : 80
+          );
 
           return {
             ...s,
             score: avgScore,
             meetingScores: currentScores,
             meetingNotes: currentNotes,
+            meetingAbsences: currentAbsences,
             notes: meetingIndex === 0 && notes !== undefined ? notes : s.notes
           };
         })
       );
       try {
-        await updateStudentMeetingScoreInDb(studentId, meetingIndex, newScore, notes);
+        await updateStudentMeetingScoreInDb(studentId, meetingIndex, newScore, notes, isAbsent, schedules);
       } catch (err) {
         console.error('Failed to update student meeting score:', err);
       }
@@ -305,35 +314,34 @@ export default function App() {
           s.meetingNotes && s.meetingNotes.length === 20
             ? [...s.meetingNotes]
             : Array(20).fill(null);
+        const currentAbsences =
+          s.meetingAbsences && s.meetingAbsences.length === 20
+            ? [...s.meetingAbsences]
+            : Array(20).fill(false);
 
         // Hanya kosongkan pertemuan yang BELUM diatur tanggalnya
         for (let m = 0; m < 20; m++) {
           if (!configuredIndexes.has(m)) {
             currentScores[m] = null;
             currentNotes[m] = null;
+            currentAbsences[m] = false;
           }
         }
 
-        // Hitung ulang rata-rata dari pertemuan berjadwal yang tersisa
-        const validScores: number[] = [];
-        for (let m = 0; m < 20; m++) {
-          if (configuredIndexes.has(m)) {
-            const sc = currentScores[m];
-            const effectiveScore = typeof sc === 'number' && sc !== null && sc > 0 ? sc : 80;
-            validScores.push(effectiveScore);
-          }
-        }
-
-        const avgScore =
-          validScores.length > 0
-            ? Math.round(validScores.reduce((sum, val) => sum + val, 0) / validScores.length)
-            : 80;
+        // Hitung ulang rata-rata HANYA dari pertemuan yang SUDAH TERBUKA
+        const avgScore = calculateStudentAverageScore(
+          currentScores,
+          currentAbsences,
+          schedules,
+          80
+        );
 
         return {
           ...s,
           score: avgScore,
           meetingScores: currentScores,
           meetingNotes: currentNotes,
+          meetingAbsences: currentAbsences,
           notes: configuredIndexes.has(0) ? (currentNotes[0] || s.notes || '') : '',
           lastUpdated: new Date().toISOString(),
         };

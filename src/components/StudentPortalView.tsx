@@ -1,6 +1,7 @@
 import React from 'react';
 import { LogOut, Award } from 'lucide-react';
 import { Student, MeetingSchedule } from '../types';
+import { isMeetingOpened, formatIndonesianDate } from '../utils/scheduleHelper';
 
 interface StudentPortalViewProps {
   student: Student;
@@ -59,7 +60,7 @@ export const getQuoteForScore = (score: number, seedStr: string) => {
 // 60 = Ungu (Purple)
 // <60 (50) = Merah (Red)
 export const getScoreColorScheme = (score: number | null) => {
-  if (score === null || score === undefined || score === 0) {
+  if (score === null || score === undefined) {
     return {
       card: 'bg-slate-100 text-slate-400 border-slate-300 border-dashed',
       textScore: 'text-slate-300',
@@ -68,7 +69,20 @@ export const getScoreColorScheme = (score: number | null) => {
       heroBg: 'bg-slate-800 text-white border-slate-700',
       heroBadge: 'bg-slate-700 text-slate-300 border-slate-600',
       subtext: 'text-slate-400',
-      predicate: '-',
+      predicate: 'Terkunci',
+    };
+  }
+
+  if (score === 0) {
+    return {
+      card: 'bg-rose-50 text-rose-900 border-rose-300 shadow-xs',
+      textScore: 'text-rose-700 font-black',
+      label: 'text-rose-900 font-bold',
+      badge: 'bg-rose-600 text-white border-rose-700 font-extrabold',
+      heroBg: 'bg-gradient-to-br from-rose-800 via-rose-900 to-slate-900 text-white border-2 border-rose-500',
+      heroBadge: 'bg-rose-950 text-rose-200 border border-rose-400',
+      subtext: 'text-rose-200',
+      predicate: 'Tidak Hadir',
     };
   }
 
@@ -160,28 +174,31 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
   schedules = [],
   onLogout,
 }) => {
-  // Calculate average score based on filled meetings with activeDate configured
+  // Calculate average score based strictly on OPENED meetings (activeDate <= today)
   const meetingScores = student.meetingScores || [];
+  const meetingAbsences = student.meetingAbsences || [];
   const validScores: number[] = [];
   
   for (let i = 0; i < 20; i++) {
-    // Penilaian hanya berlaku pada kolom yang di-set tanggal
     const sched = schedules.find((s) => s.meetingNumber === i + 1);
-    const isDateConfigured = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
-    if (isDateConfigured) {
-      const raw = meetingScores[i];
-      const sc = typeof raw === 'number' && raw !== null && (raw as number) > 0 ? (raw as number) : 80;
-      validScores.push(sc);
+    if (isMeetingOpened(sched)) {
+      if (meetingAbsences[i] === true) {
+        validScores.push(0);
+      } else {
+        const raw = meetingScores[i];
+        const sc = typeof raw === 'number' && raw !== null ? raw : 80;
+        validScores.push(sc);
+      }
     }
   }
 
-  const totalCompletedMeetings = validScores.length;
-  const averageScore = totalCompletedMeetings > 0
-    ? Math.round(validScores.reduce((sum, val) => sum + val, 0) / totalCompletedMeetings)
+  const totalOpenedMeetings = validScores.length;
+  const averageScore = totalOpenedMeetings > 0
+    ? Math.round(validScores.reduce((sum, val) => sum + val, 0) / totalOpenedMeetings)
     : (student.score && student.score > 0 ? student.score : 80);
 
   const heroStyle = getScoreColorScheme(averageScore);
-  const selectedQuote = averageScore !== null
+  const selectedQuote = totalOpenedMeetings > 0
     ? getQuoteForScore(averageScore, student.nisn || student.id)
     : 'Penilaian kokurikuler belum dimulai. Pantau jadwal pertemuan untuk melihat hasil penilaian sikap.';
 
@@ -208,16 +225,16 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
             NISN: <strong>{student.nisn}</strong> • {student.className}
           </div>
           <div className={`text-xs mt-1 ${heroStyle.subtext}`}>
-            Pertemuan Terisi: <strong>{totalCompletedMeetings}</strong> dari 20
+            Pertemuan Terbuka: <strong>{totalOpenedMeetings}</strong> dari 20
           </div>
         </div>
 
         <div className="flex flex-col items-center justify-center bg-black/15 backdrop-blur-md px-6 py-3.5 rounded-2xl border border-white/20 min-w-[160px] z-10 shrink-0">
           <div className="text-4xl sm:text-5xl font-black tracking-tight">
-            {averageScore !== null ? averageScore : '-'}
+            {totalOpenedMeetings > 0 ? averageScore : '-'}
           </div>
           <div className={`mt-2 px-4 py-1 rounded-full text-xs sm:text-sm font-black uppercase tracking-wider border animate-pulse shadow-xs ${heroStyle.heroBadge}`}>
-            {averageScore !== null ? heroStyle.predicate : 'Belum Ada Penilaian'}
+            {totalOpenedMeetings > 0 ? heroStyle.predicate : 'Belum Ada Penilaian'}
           </div>
         </div>
 
@@ -249,12 +266,23 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
           {Array.from({ length: 20 }, (_, idx) => {
             const meetingNum = idx + 1;
             const sched = schedules.find((s) => s.meetingNumber === meetingNum);
-            const isDateConfigured = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
+            const isOpened = isMeetingOpened(sched);
+            const isAbsent = meetingAbsences[idx] === true;
             let score: number | null = null;
+            let statusText = 'Terkunci';
 
-            if (isDateConfigured) {
-              const raw = meetingScores[idx];
-              score = typeof raw === 'number' && raw !== null && (raw as number) > 0 ? (raw as number) : 80;
+            if (isOpened) {
+              if (isAbsent) {
+                score = 0;
+                statusText = 'Tidak Hadir';
+              } else {
+                const raw = meetingScores[idx];
+                score = typeof raw === 'number' && raw !== null ? raw : 80;
+              }
+            } else if (sched?.activeDate && sched.activeDate.trim() !== '') {
+              statusText = `Buka: ${formatIndonesianDate(sched.activeDate)}`;
+            } else {
+              statusText = 'Belum Diatur';
             }
 
             const itemStyle = getScoreColorScheme(score);
@@ -262,11 +290,13 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
             return (
               <div
                 key={meetingNum}
-                className={`p-3 rounded-2xl border flex flex-col items-center justify-between space-y-2 transition-all ${itemStyle.card}`}
+                className={`p-3 rounded-2xl border flex flex-col items-center justify-between space-y-2 transition-all ${
+                  isOpened ? itemStyle.card : 'bg-slate-50 text-slate-400 border-slate-200 opacity-75'
+                }`}
               >
                 {/* Score Value (Besar) */}
                 <div className="text-center py-0.5">
-                  <div className={`text-3xl sm:text-4xl font-black tracking-tight ${itemStyle.textScore}`}>
+                  <div className={`text-3xl sm:text-4xl font-black tracking-tight ${isOpened ? itemStyle.textScore : 'text-slate-300'}`}>
                     {score !== null ? score : '-'}
                   </div>
                 </div>
@@ -277,13 +307,13 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
                     {itemStyle.predicate}
                   </div>
                 ) : (
-                  <div className="text-[10px] italic opacity-60">
-                    Belum Terisi
+                  <div className="text-[10px] font-bold text-slate-500 bg-slate-200/80 px-2 py-0.5 rounded-md truncate max-w-full text-center">
+                    {statusText}
                   </div>
                 )}
 
                 {/* Pertemuan Label */}
-                <div className={`text-[10px] font-bold uppercase tracking-wider text-center pt-1 border-t border-black/10 sm:border-white/20 w-full ${itemStyle.label}`}>
+                <div className={`text-[10px] font-bold uppercase tracking-wider text-center pt-1 border-t border-black/10 sm:border-white/20 w-full ${isOpened ? itemStyle.label : 'text-slate-400'}`}>
                   Pertemuan {meetingNum}
                 </div>
               </div>

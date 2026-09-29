@@ -12,6 +12,7 @@ import {
 import { ClassRoom, Student, MeetingSchedule } from '../types';
 import { getPredicate } from '../utils/excelExport';
 import { getScoreColorScheme, getQuoteForScore } from './StudentPortalView';
+import { isMeetingOpened, formatIndonesianDate } from '../utils/scheduleHelper';
 
 const CLASS_GRADIENTS = [
   // 1. Green (Emerald)
@@ -364,28 +365,31 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {/* Kotak Nilai Ringkas dengan Warna Sesuai Nilai */}
               {(() => {
                 const meetingScores = selectedStudentForModal.meetingScores || [];
+                const meetingAbsences = selectedStudentForModal.meetingAbsences || [];
                 const validScores: number[] = [];
                 for (let i = 0; i < 20; i++) {
                   const sched = schedules.find((s) => s.meetingNumber === i + 1);
-                  const isDateSet = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
-                  if (isDateSet) {
-                    const raw = meetingScores[i];
-                    const sc = typeof raw === 'number' && raw !== null && (raw as number) > 0 ? (raw as number) : 80;
-                    validScores.push(sc);
+                  if (isMeetingOpened(sched)) {
+                    if (meetingAbsences[i] === true) {
+                      validScores.push(0);
+                    } else {
+                      const raw = meetingScores[i];
+                      const sc = typeof raw === 'number' && raw !== null ? raw : 80;
+                      validScores.push(sc);
+                    }
                   }
                 }
 
-                const effectiveValidScores =
-                  validScores.length > 0 ? validScores : (selectedStudentForModal.score > 0 ? [selectedStudentForModal.score] : [80]);
+                const effectiveValidScores = validScores;
                 const avgScore = effectiveValidScores.length > 0
                   ? Math.round(effectiveValidScores.reduce((sum, val) => sum + val, 0) / effectiveValidScores.length)
                   : 80;
 
-                const style = getScoreColorScheme(avgScore);
-                const quote = avgScore !== null ? getQuoteForScore(
+                const style = getScoreColorScheme(effectiveValidScores.length > 0 ? avgScore : null);
+                const quote = effectiveValidScores.length > 0 ? getQuoteForScore(
                   avgScore,
                   selectedStudentForModal.nisn || selectedStudentForModal.id
-                ) : 'Penilaian kokurikuler belum dimulai.';
+                ) : 'Penilaian kokurikuler belum dimulai. Pantau jadwal pertemuan untuk melihat hasil.';
 
                 return (
                   <div className="space-y-2.5">
@@ -395,10 +399,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         Nilai Rata-Rata Akhir
                       </div>
                       <div className="text-3xl font-black tracking-tight my-0.5">
-                        {avgScore !== null ? avgScore : '-'}
+                        {effectiveValidScores.length > 0 ? avgScore : '-'}
                       </div>
                       <div className="text-[10px] font-extrabold uppercase tracking-wider">
-                        Predikat: {avgScore !== null ? style.predicate : 'Belum Dinilai'}
+                        Predikat: {effectiveValidScores.length > 0 ? style.predicate : 'Belum Ada Penilaian'}
                       </div>
                     </div>
 
@@ -407,7 +411,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <div className="flex items-center justify-between text-[11px] font-extrabold text-slate-800">
                         <span>Tap Pertemuan (1 - 20) Untuk Detail:</span>
                         <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.2 rounded-md">
-                          {effectiveValidScores.length} Terisi
+                          {effectiveValidScores.length} Terbuka
                         </span>
                       </div>
 
@@ -416,12 +420,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         {Array.from({ length: 20 }, (_, idx) => {
                           const meetingNum = idx + 1;
                           const sched = schedules.find((s) => s.meetingNumber === meetingNum);
-                          const isDateSet = Boolean(sched?.activeDate && sched.activeDate.trim() !== '');
+                          const isOpened = isMeetingOpened(sched);
+                          const isAbsent = meetingAbsences[idx] === true;
                           let mScore: number | null = null;
 
-                          if (isDateSet) {
-                            const raw = meetingScores[idx];
-                            mScore = raw !== undefined && raw !== null && (raw as number) > 0 ? (raw as number) : 80;
+                          if (isOpened) {
+                            if (isAbsent) {
+                              mScore = 0;
+                            } else {
+                              const raw = meetingScores[idx];
+                              mScore = typeof raw === 'number' && raw !== null ? raw : 80;
+                            }
                           }
 
                           const mStyle = getScoreColorScheme(mScore);
@@ -433,7 +442,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                               type="button"
                               onClick={() => setSelectedMeetingIndex(idx)}
                               className={`p-1 rounded-xl border text-center flex flex-col justify-between items-center transition-all cursor-pointer active:scale-95 ${
-                                mStyle.card
+                                isOpened ? mStyle.card : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60'
                               } ${
                                 isSelected
                                   ? 'ring-2 ring-emerald-600 ring-offset-1 font-black scale-105 shadow-md z-10'
@@ -445,7 +454,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                                 P{meetingNum}
                               </div>
                               <div className="text-xs font-black tracking-tight leading-tight my-0.5">
-                                {mScore !== null ? mScore : '-'}
+                                {isAbsent ? 'Absen' : mScore !== null ? mScore : '-'}
                               </div>
                             </button>
                           );
@@ -457,11 +466,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     {(() => {
                       const currentMeetingNum = selectedMeetingIndex + 1;
                       const currentSched = schedules.find((s) => s.meetingNumber === currentMeetingNum);
-                      const isCurrentDateSet = Boolean(currentSched?.activeDate && currentSched.activeDate.trim() !== '');
+                      const isCurrentOpened = isMeetingOpened(currentSched);
+                      const isCurrentAbsent = meetingAbsences[selectedMeetingIndex] === true;
                       let currentMeetingScore: number | null = null;
-                      if (isCurrentDateSet) {
-                        const raw = meetingScores[selectedMeetingIndex];
-                        currentMeetingScore = raw !== undefined && raw !== null && (raw as number) > 0 ? (raw as number) : 80;
+                      if (isCurrentOpened) {
+                        if (isCurrentAbsent) {
+                          currentMeetingScore = 0;
+                        } else {
+                          const raw = meetingScores[selectedMeetingIndex];
+                          currentMeetingScore = typeof raw === 'number' && raw !== null ? raw : 80;
+                        }
                       }
 
                       const currentMeetingNote =
@@ -471,11 +485,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           : null);
 
                       const currentMeetingQuote =
-                        currentMeetingScore !== null
+                        currentMeetingScore !== null && !isCurrentAbsent
                           ? getQuoteForScore(
                               currentMeetingScore,
                               (selectedStudentForModal.nisn || selectedStudentForModal.id) + selectedMeetingIndex
                             )
+                          : isCurrentAbsent
+                          ? 'Siswa tidak hadir pada pertemuan ini.'
                           : null;
 
                       const currentStyle = getScoreColorScheme(currentMeetingScore);
@@ -487,7 +503,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                               Detail Pertemuan {currentMeetingNum}
                             </span>
                             <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md border ${currentStyle.card}`}>
-                              {currentMeetingScore !== null ? `Nilai: ${currentMeetingScore}` : 'Belum Terisi'}
+                              {isCurrentAbsent
+                                ? 'Tidak Hadir (Nilai: 0)'
+                                : currentMeetingScore !== null
+                                ? `Nilai: ${currentMeetingScore}`
+                                : 'Terkunci'}
                             </span>
                           </div>
 
