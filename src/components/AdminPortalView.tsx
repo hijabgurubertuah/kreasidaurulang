@@ -2289,14 +2289,14 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
       {/* TAB 7: KRITERIA PENILAIAN SIKAP */}
       {activeTab === 'criteria' && (
         <div className="space-y-4">
-          {/* Header Action Bar with Save to Firebase Button */}
+          {/* Header Action Bar with Save Button */}
           <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 shadow-xs flex items-center justify-between gap-3">
             <div className="flex items-center space-x-2.5">
               <div className="p-2 bg-emerald-50 rounded-xl text-emerald-700 shrink-0">
                 <ListChecks className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
               <span className="text-xs font-semibold text-slate-600">
-                Tekan lama / seret untuk mengatur urutan posisi
+                Terapkan Kriteria
               </span>
             </div>
 
@@ -2316,8 +2316,8 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                 {isSavingCriteria
                   ? 'Menyimpan...'
                   : hasCriteriaChanges
-                  ? 'Simpan ke Firebase *'
-                  : 'Simpan ke Firebase'}
+                  ? 'SIMPAN *'
+                  : 'SIMPAN'}
               </span>
             </button>
           </div>
