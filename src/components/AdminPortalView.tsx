@@ -387,6 +387,16 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     setHasCriteriaChanges(true);
   };
 
+  const handleDeletePositiveCriterion = (id: string) => {
+    setLocalPositiveCriteria((prev) => prev.filter((c) => c.id !== id));
+    setHasCriteriaChanges(true);
+  };
+
+  const handleDeleteNegativeCriterion = (id: string) => {
+    setLocalNegativeCriteria((prev) => prev.filter((c) => c.id !== id));
+    setHasCriteriaChanges(true);
+  };
+
   const handleAddPositiveCriterion = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const cleanTitle = newPosTitle.trim();
@@ -2475,7 +2485,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                             </p>
                           </div>
 
-                          {/* Action Buttons: Edit Only (Delete 'x' Removed) */}
+                          {/* Action Buttons: Edit & Delete */}
                           <div className="flex items-center space-x-1 shrink-0">
                             <button
                               type="button"
@@ -2484,6 +2494,14 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                               title="Edit kriteria ini"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePositiveCriterion(item.id)}
+                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Hapus kriteria ini"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
@@ -2661,7 +2679,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                             </p>
                           </div>
 
-                          {/* Action Buttons: Edit Only (Delete 'x' Removed) */}
+                          {/* Action Buttons: Edit & Delete */}
                           <div className="flex items-center space-x-1 shrink-0">
                             <button
                               type="button"
@@ -2670,6 +2688,14 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                               title="Edit kriteria ini"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteNegativeCriterion(item.id)}
+                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="Hapus kriteria ini"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
