@@ -46,6 +46,7 @@ import {
   resetDatabaseToDefaultsInDb,
   deduplicateStudentsInDb,
   resetAllStudentScoresInDb,
+  resetSingleMeetingScoresInDb,
   listenToSchedules,
   saveScheduleInDb,
   listenToCriteria,
@@ -291,9 +292,56 @@ export default function App() {
   );
 
   // Reset student evaluation scores (Tab Jadwal)
-  // Aturan: Hanya reset pertemuan yang TIDAK di-set tanggalnya.
+  // Aturan: Bisa mereset satu pertemuan tertentu (meetingNumber) atau semua pertemuan yang belum di-set tanggalnya.
   // Nilai pada pertemuan yang sudah di-set tanggalnya TIDAK ikut ter-reset.
-  const handleResetStudentScores = async (): Promise<number> => {
+  const handleResetStudentScores = async (meetingNumber?: number): Promise<number> => {
+    if (meetingNumber !== undefined) {
+      const count = await resetSingleMeetingScoresInDb(meetingNumber, schedules);
+      const meetingIdx = meetingNumber - 1;
+
+      setStudents((prev) =>
+        prev.map((s) => {
+          const currentScores =
+            s.meetingScores && s.meetingScores.length === 20
+              ? [...s.meetingScores]
+              : Array(20).fill(null);
+          const currentNotes =
+            s.meetingNotes && s.meetingNotes.length === 20
+              ? [...s.meetingNotes]
+              : Array(20).fill(null);
+          const currentAbsences =
+            s.meetingAbsences && s.meetingAbsences.length === 20
+              ? [...s.meetingAbsences]
+              : Array(20).fill(false);
+
+          currentScores[meetingIdx] = null;
+          currentNotes[meetingIdx] = null;
+          currentAbsences[meetingIdx] = false;
+
+          const avgScore = calculateStudentAverageScore(
+            currentScores,
+            currentAbsences,
+            schedules,
+            80
+          );
+
+          return {
+            ...s,
+            score: avgScore,
+            meetingScores: currentScores,
+            meetingNotes: currentNotes,
+            meetingAbsences: currentAbsences,
+            notes: meetingIdx === 0 ? '' : (s.notes || ''),
+            lastUpdated: new Date().toISOString(),
+          };
+        })
+      );
+
+      setSaveSuccessNotification(`Nilai uji coba Pertemuan ${meetingNumber} berhasil direset untuk ${count} siswa!`);
+      setTimeout(() => setSaveSuccessNotification(null), 4000);
+      return count;
+    }
+
     const count = await resetAllStudentScoresInDb(schedules);
 
     // Filter indeks pertemuan yang memiliki tanggal aktif

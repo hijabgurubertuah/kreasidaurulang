@@ -94,7 +94,7 @@ interface AdminPortalViewProps {
     removedClassDuplicates?: number;
     removedEmptyClasses?: number;
   }>;
-  onResetStudentScores?: () => Promise<number>;
+  onResetStudentScores?: (meetingNumber?: number) => Promise<number>;
   firebaseConnected?: boolean;
   hasPendingChanges?: boolean;
   pendingChangesCount?: number;
@@ -134,7 +134,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
 
   // Reset Scores States (Jadwal tab)
   const [isResettingScores, setIsResettingScores] = useState(false);
-  const [showResetScoresConfirm, setShowResetScoresConfirm] = useState(false);
+  const [meetingToReset, setMeetingToReset] = useState<number | null>(null);
 
   // Criteria Management States
   const [localPositiveCriteria, setLocalPositiveCriteria] = useState<ScoringCriterion[]>(
@@ -336,14 +336,18 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     return parseGoogleSheetsUrl(spreadsheetUrl);
   }, [spreadsheetUrl]);
 
-  // Handler reset seluruh nilai penilaian siswa (Tab Jadwal)
-  const handleConfirmResetScores = async () => {
+  // Handler reset nilai penilaian siswa (Tab Jadwal)
+  const handleConfirmResetScores = async (meetingNum?: number) => {
     if (!onResetStudentScores) return;
     setIsResettingScores(true);
     try {
-      const count = await onResetStudentScores();
-      setShowResetScoresConfirm(false);
-      setSuccessMessage(`Berhasil mereset penilaian pertemuan tanpa tanggal untuk ${count} siswa. Nilai pada pertemuan berjadwal tetap dipertahankan.`);
+      const count = await onResetStudentScores(meetingNum);
+      setMeetingToReset(null);
+      if (meetingNum !== undefined) {
+        setSuccessMessage(`Berhasil mereset nilai uji coba Pertemuan ${meetingNum} untuk ${count} siswa.`);
+      } else {
+        setSuccessMessage(`Berhasil mereset penilaian pertemuan tanpa tanggal untuk ${count} siswa. Nilai pada pertemuan berjadwal tetap dipertahankan.`);
+      }
       setTimeout(() => setSuccessMessage(''), 4000);
     } catch (err) {
       console.error('Failed to reset student scores:', err);
@@ -2062,19 +2066,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                 Jadwal 20 Pertemuan
               </span>
             </div>
-
-            {/* Tombol Reset Penilaian Siswa */}
-            <div className="flex items-center space-x-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setShowResetScoresConfirm(true)}
-                className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer flex items-center space-x-2 shadow-xs active:scale-95 border border-rose-400/50"
-                title="Reset seluruh penilaian siswa agar kosong kembali"
-              >
-                <RotateCcw className="w-4 h-4" />
-                <span>Reset Penilaian Siswa</span>
-              </button>
-            </div>
           </div>
 
           {/* Minimal Grid of 20 boxes */}
@@ -2178,27 +2169,47 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                       </button>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingScheduleId(`meeting-${meetingNum}`);
-                        setTempActiveDate(activeDate || new Date().toISOString().split('T')[0]);
-                      }}
-                      className="w-full flex flex-col items-center justify-center cursor-pointer group"
-                    >
-                      <div
-                        className={`text-xs font-black tracking-tight leading-tight px-2.5 py-1 rounded-xl transition-all ${
-                          activeDate
-                            ? 'bg-purple-100 text-purple-900 font-extrabold shadow-2xs group-hover:scale-105'
-                            : 'bg-slate-50 text-slate-400 group-hover:bg-purple-50 group-hover:text-purple-700'
-                        }`}
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingScheduleId(`meeting-${meetingNum}`);
+                          setTempActiveDate(activeDate || new Date().toISOString().split('T')[0]);
+                        }}
+                        className="w-full flex flex-col items-center justify-center cursor-pointer group"
                       >
-                        {displayDate}
-                      </div>
-                      <div className="text-[9px] text-slate-400 mt-2 opacity-0 group-hover:opacity-100 transition-opacity font-bold uppercase tracking-wider">
-                        Atur Tanggal
-                      </div>
-                    </button>
+                        <div
+                          className={`text-xs font-black tracking-tight leading-tight px-2.5 py-1 rounded-xl transition-all ${
+                            activeDate
+                              ? 'bg-purple-100 text-purple-900 font-extrabold shadow-2xs group-hover:scale-105'
+                              : 'bg-slate-50 text-slate-400 group-hover:bg-purple-50 group-hover:text-purple-700'
+                          }`}
+                        >
+                          {displayDate}
+                        </div>
+                        <div className="text-[9px] text-slate-400 mt-1 opacity-0 group-hover:opacity-100 transition-opacity font-bold uppercase tracking-wider">
+                          Atur Tanggal
+                        </div>
+                      </button>
+
+                      {/* Tombol Reset Minimalis - Hanya untuk pertemuan yang belum di-set tanggalnya */}
+                      {!activeDate && (
+                        <div className="w-full pt-1 flex justify-center">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setMeetingToReset(meetingNum);
+                            }}
+                            className="inline-flex items-center space-x-1 px-2 py-0.5 text-[10px] font-semibold text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer active:scale-95"
+                            title={`Reset nilai percobaan Pertemuan ${meetingNum}`}
+                          >
+                            <RotateCcw className="w-2.5 h-2.5" />
+                            <span>Reset</span>
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               );
@@ -2914,69 +2925,73 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         }}
       />
 
-      {/* Modal Konfirmasi Reset Seluruh Penilaian Siswa */}
-      {showResetScoresConfirm && typeof document !== 'undefined' &&
+      {/* Modal Konfirmasi Reset Pertemuan (Minimalis) */}
+      {meetingToReset !== null && typeof document !== 'undefined' &&
         createPortal(
-          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 bg-slate-900/75 backdrop-blur-xs animate-fadeIn">
-            <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 p-5 sm:p-6 relative space-y-4 my-auto">
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+            <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl border border-slate-200 p-5 relative space-y-3.5 my-auto">
               <div className="flex items-center space-x-3 text-rose-600">
-                <div className="p-3 bg-rose-50 rounded-2xl border border-rose-100">
-                  <AlertCircle className="w-6 h-6" />
+                <div className="p-2.5 bg-rose-50 rounded-xl border border-rose-100">
+                  <RotateCcw className="w-5 h-5 text-rose-600" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-slate-900 leading-tight">
-                    Reset Seluruh Penilaian Siswa?
+                  <h3 className="text-sm font-bold text-slate-900 leading-tight">
+                    Reset Pertemuan {meetingToReset}?
                   </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Mengosongkan semua riwayat nilai 20 pertemuan
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Kosongkan nilai uji coba pertemuan ini
                   </p>
                 </div>
               </div>
 
-              <div className="p-3.5 bg-rose-50/70 rounded-2xl border border-rose-200/70 text-xs text-slate-700 space-y-2">
-                <p className="font-bold text-rose-950">
-                  Apakah Anda yakin ingin mereset penilaian pada pertemuan tanpa jadwal?
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs text-slate-600 space-y-1.5 leading-relaxed">
+                <p>
+                  Nilai dan catatan uji coba pada <strong>Pertemuan {meetingToReset}</strong> untuk seluruh siswa akan dikosongkan.
                 </p>
-                <ul className="list-disc list-inside space-y-1.5 text-slate-600 text-[11px] leading-relaxed">
-                  <li>
-                    <strong className="text-emerald-700">Pertemuan berjadwal aman:</strong> Nilai yang sudah terisi pada pertemuan yang telah di-set tanggalnya <strong>TIDAK IKUT TER-RESET</strong> (tetap tersimpan aman).
-                  </li>
-                  <li>
-                    <strong className="text-rose-700">Pertemuan tanpa jadwal:</strong> Hanya nilai dan catatan uji coba pada pertemuan yang belum di-set tanggalnya yang akan dikosongkan.
-                  </li>
-                  <li>
-                    Rata-rata sikap untuk {students.length} siswa akan otomatis dihitung ulang berdasarkan pertemuan resmi berjadwal.
-                  </li>
-                </ul>
+                <p className="text-[11px] text-emerald-700 font-semibold">
+                  ✓ Pertemuan berjadwal lainnya tetap aman dan tidak terpengaruh.
+                </p>
               </div>
 
-              <div className="flex items-center justify-end space-x-2 pt-1">
+              <div className="flex items-center justify-between pt-1">
                 <button
                   type="button"
                   disabled={isResettingScores}
-                  onClick={() => setShowResetScoresConfirm(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                  onClick={() => handleConfirmResetScores()}
+                  className="text-[11px] text-slate-400 hover:text-rose-600 underline cursor-pointer"
+                  title="Reset semua pertemuan yang belum diset tanggalnya sekaligus"
                 >
-                  Batal
+                  Reset semua tanpa jadwal
                 </button>
-                <button
-                  type="button"
-                  disabled={isResettingScores}
-                  onClick={handleConfirmResetScores}
-                  className="px-4 py-2 text-xs font-black text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50 active:scale-95"
-                >
-                  {isResettingScores ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Mereset Data...</span>
-                    </>
-                  ) : (
-                    <>
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Ya, Reset Nilai Tanpa Tanggal</span>
-                    </>
-                  )}
-                </button>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    disabled={isResettingScores}
+                    onClick={() => setMeetingToReset(null)}
+                    className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isResettingScores}
+                    onClick={() => handleConfirmResetScores(meetingToReset)}
+                    className="px-3.5 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50 active:scale-95"
+                  >
+                    {isResettingScores ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Mereset...</span>
+                      </>
+                    ) : (
+                      <>
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Ya, Reset</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>,

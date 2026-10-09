@@ -1181,6 +1181,73 @@ export async function resetAllStudentScoresInDb(
   }
 }
 
+/**
+ * Reset student evaluation scores for a single specific meeting in Firestore.
+ */
+export async function resetSingleMeetingScoresInDb(
+  meetingNumber: number,
+  schedules: MeetingSchedule[] = []
+): Promise<number> {
+  try {
+    const snap = await getDocs(collection(db, STUDENTS_COL));
+    if (snap.empty) return 0;
+
+    const meetingIdx = meetingNumber - 1;
+    const chunkSize = 400;
+    const docs = snap.docs;
+    for (let i = 0; i < docs.length; i += chunkSize) {
+      const batch = writeBatch(db);
+      docs.slice(i, i + chunkSize).forEach((d) => {
+        const data = d.data() as Student;
+        const currentScores =
+          data.meetingScores && data.meetingScores.length === 20
+            ? [...data.meetingScores]
+            : Array(20).fill(null);
+        const currentNotes =
+          data.meetingNotes && data.meetingNotes.length === 20
+            ? [...data.meetingNotes]
+            : Array(20).fill(null);
+        const currentAbsences =
+          data.meetingAbsences && data.meetingAbsences.length === 20
+            ? [...data.meetingAbsences]
+            : Array(20).fill(false);
+
+        // Reset the targeted meeting
+        currentScores[meetingIdx] = null;
+        currentNotes[meetingIdx] = null;
+        currentAbsences[meetingIdx] = false;
+
+        const avgScore = calculateStudentAverageScore(
+          currentScores,
+          currentAbsences,
+          schedules,
+          80
+        );
+
+        batch.update(d.ref, {
+          score: avgScore,
+          meetingScores: currentScores,
+          meetingNotes: currentNotes,
+          meetingAbsences: currentAbsences,
+          notes: meetingIdx === 0 ? '' : (data.notes || ''),
+          lastUpdated: new Date().toISOString(),
+        });
+      });
+      await batch.commit();
+    }
+    recordQuotaUsage({ writes: docs.length });
+    await addSystemLog(
+      'RESET_PERTEMUAN',
+      `Mereset nilai percobaan Pertemuan ${meetingNumber} untuk ${docs.length} siswa.`,
+      'ADMIN123'
+    );
+    return docs.length;
+  } catch (err) {
+    console.error('Failed to reset single meeting scores in Firestore:', err);
+    throw err;
+  }
+}
+
 const SYSTEM_LOGS_COL = 'system_logs';
 
 /**
