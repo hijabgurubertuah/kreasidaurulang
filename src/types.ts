@@ -134,33 +134,3 @@ export interface StudentModuleProgress {
   updatedAt?: string;
 }
 
-// ==========================================
-// GOOGLE WORKSPACE (DRIVE & SHEETS) TYPES
-// ==========================================
-
-export interface GoogleDriveFile {
-  id: string;
-  name: string;
-  mimeType: string;
-  webViewLink?: string;
-  webContentLink?: string;
-  iconLink?: string;
-  thumbnailLink?: string;
-  createdTime?: string;
-  modifiedTime?: string;
-  size?: string;
-  owners?: { displayName: string; emailAddress: string; photoLink?: string }[];
-  shared?: boolean;
-}
-
-export interface GoogleSpreadsheetSummary {
-  spreadsheetId: string;
-  title: string;
-  spreadsheetUrl: string;
-  sheets: {
-    sheetId: number;
-    title: string;
-    rowCount?: number;
-    columnCount?: number;
-  }[];
-}

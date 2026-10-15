@@ -41,10 +41,8 @@ import {
   ChevronDown,
   BookOpen,
   ArrowLeft,
-  HardDrive,
 } from 'lucide-react';
 import { ModuleManagement } from './ModuleManagement';
-import { GoogleWorkspaceModal } from './GoogleWorkspaceModal';
 import {
   ClassRoom,
   Student,
@@ -193,7 +191,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   const [isFetchingSheet, setIsFetchingSheet] = useState(false);
   const [isSavingSpreadsheetUrl, setIsSavingSpreadsheetUrl] = useState(false);
   const [isDeletingSpreadsheetUrl, setIsDeletingSpreadsheetUrl] = useState(false);
-  const [isGoogleWorkspaceOpen, setIsGoogleWorkspaceOpen] = useState(false);
 
   // Student Form (Add / Edit Modal)
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
@@ -649,62 +646,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     }
   };
 
-  // Import students from Google Sheets directly via OAuth
-  const handleImportStudentsFromGoogleSheets = (imported: Partial<Student>[]) => {
-    if (!imported || imported.length === 0) return;
-    const existingNisns = new Set(students.map((s) => s.nisn.trim()));
-    const newStudents: Student[] = [];
-
-    imported.forEach((item, idx) => {
-      if (!item.nisn || !item.name) return;
-      const cleanNisn = item.nisn.trim();
-      if (!existingNisns.has(cleanNisn)) {
-        const clsName = item.className || 'Kelas 7A';
-        const foundClass = classes.find((c) => c.name.toLowerCase() === clsName.toLowerCase());
-        const clsId = foundClass ? foundClass.id : `class-${clsName.toLowerCase().replace(/\s+/g, '-')}`;
-
-        newStudents.push({
-          id: `st-gs-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 5)}`,
-          nisn: cleanNisn,
-          name: item.name.trim(),
-          classId: clsId,
-          className: clsName,
-          score: 80,
-          projectTitle: item.projectTitle || 'Kreasi Daur Ulang Mandiri',
-          meetingScores: Array(20).fill(null),
-          meetingNotes: Array(20).fill(null),
-          meetingAbsences: Array(20).fill(false),
-          lastUpdated: new Date().toISOString(),
-        });
-        existingNisns.add(cleanNisn);
-      }
-    });
-
-    if (newStudents.length > 0) {
-      const combined = [...students, ...newStudents];
-      const classMap = new Map<string, ClassRoom>();
-      classes.forEach((c) => classMap.set(c.id, c));
-      newStudents.forEach((st) => {
-        if (!classMap.has(st.classId)) {
-          classMap.set(st.classId, {
-            id: st.classId,
-            name: st.className,
-            grade: st.className.replace(/\D/g, '') || '7',
-            studentCount: 1,
-            averageScore: 80,
-          });
-        }
-      });
-
-      onSyncCsvData(combined, Array.from(classMap.values()));
-      setSuccessMessage(`Berhasil menambahkan ${newStudents.length} siswa baru dari Google Sheets! Simpan ke Firebase untuk menyimpan permanen.`);
-    } else {
-      setSuccessMessage('Semua siswa dari Google Sheets sudah ada di database (tidak ada duplikasi).');
-    }
-  };
-
   // Student Form open handlers
-
   const handleOpenAddStudent = () => {
     setEditingStudent(null);
     setFormNisn('');
@@ -1176,36 +1118,8 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
 
   return (
     <div className="w-full max-w-5xl mx-auto px-3 sm:px-6 py-4 space-y-4 animate-fadeIn">
-      {/* Top Admin Utility Bar with Google Drive & Sheets */}
-      <div className="flex items-center justify-between gap-2 bg-white p-3 rounded-2xl border border-slate-200/90 shadow-xs">
-        <div className="flex items-center space-x-2">
-          <button
-            type="button"
-            onClick={onBackToDashboard}
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Dashboard</span>
-          </button>
-          <span className="text-xs font-black text-slate-800 hidden sm:inline">Portal Administrasi Guru & Siswa</span>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <button
-            type="button"
-            onClick={() => setIsGoogleWorkspaceOpen(true)}
-            className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-xl text-xs font-black shadow-xs transition-all active:scale-95 cursor-pointer"
-            title="Buka Google Drive & Google Sheets untuk manajemen berkas dan ekspor online"
-          >
-            <HardDrive className="w-3.5 h-3.5 text-teal-200" />
-            <span>Google Drive & Sheets</span>
-          </button>
-        </div>
-      </div>
-
       {/* Notifications */}
       {successMessage && (
-
         <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-800 text-xs font-semibold flex items-center justify-between gap-2 animate-fadeIn">
           <div className="flex items-center space-x-2 min-w-0">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -1509,21 +1423,9 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                 </span>
               </button>
 
-              {/* Tombol Google Sheets */}
-              <button
-                type="button"
-                onClick={() => setIsGoogleWorkspaceOpen(true)}
-                className="flex items-center justify-center space-x-1.5 px-3 py-2 bg-gradient-to-r from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 text-teal-900 border border-teal-300 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer shadow-xs active:scale-95"
-                title="Buka Google Sheets & Drive untuk ekspor atau impor data siswa"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-teal-700" />
-                <span>Google Sheets</span>
-              </button>
-
               <button
                 type="button"
                 onClick={handleOpenAddStudent}
-
                 className="flex items-center justify-center space-x-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1940,16 +1842,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                 <Download className="w-3.5 h-3.5 shrink-0" />
                 <span>Ekspor Nilai ({selectedClassFilter ? selectedClassFilter.replace(/^Kelas\s+/i, '') : 'Semua'})</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setIsGoogleWorkspaceOpen(true)}
-                className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold rounded-xl text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer shrink-0 border border-emerald-300"
-                title="Ekspor Rekap Penilaian Sikap langsung ke Google Sheets di Google Drive"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                <span>Google Sheets</span>
-              </button>
-
               <div className="text-right shrink-0 bg-white/10 backdrop-blur-xs px-3.5 py-2 rounded-2xl border border-white/20">
                 <div className="text-2xl sm:text-3xl font-black">{filteredStudents.length}</div>
                 <div className="text-[9px] sm:text-[10px] font-bold text-emerald-100 uppercase tracking-wider">Siswa</div>
@@ -3328,17 +3220,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
           </div>,
           document.body
         )}
-
-      {/* Google Workspace (Drive & Sheets) Modal */}
-      <GoogleWorkspaceModal
-        isOpen={isGoogleWorkspaceOpen}
-        onClose={() => setIsGoogleWorkspaceOpen(false)}
-        students={students}
-        classes={classes}
-        schedules={schedules}
-        onImportStudents={handleImportStudentsFromGoogleSheets}
-      />
     </div>
   );
 };
-

@@ -39,13 +39,9 @@ import {
   ArrowLeft,
   Home,
   Award,
-  HardDrive,
-  FileSpreadsheet,
 } from 'lucide-react';
-import { GoogleWorkspaceModal } from './GoogleWorkspaceModal';
 
 interface ModuleManagementProps {
-
   students?: Student[];
   onBackToAdminPortal?: () => void;
 }
@@ -60,10 +56,8 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [hasLoadedInitially, setHasLoadedInitially] = useState(false);
-  const [isGoogleWorkspaceOpen, setIsGoogleWorkspaceOpen] = useState(false);
 
   // Unsaved Changes Tracking
-
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSavingToFirebase, setIsSavingToFirebase] = useState(false);
   const [pendingDeletedModuleIds, setPendingDeletedModuleIds] = useState<string[]>([]);
@@ -514,18 +508,8 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                   <Download className="w-3.5 h-3.5" />
                   <span>Unduh CSV</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setIsGoogleWorkspaceOpen(true)}
-                  className="px-3.5 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs rounded-xl transition-all cursor-pointer flex items-center space-x-1 shadow-md shadow-emerald-950/30 active:scale-95"
-                  title="Ekspor Nilai Kuis Modul Siswa langsung ke Google Sheets di Google Drive"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  <span>Google Sheets</span>
-                </button>
               </div>
             </div>
-
 
             {/* Filter & Search */}
             <div className="bg-white/95 backdrop-blur-md rounded-3xl border border-white/20 shadow-2xl p-4 sm:p-6 space-y-4 text-slate-800">
@@ -1064,20 +1048,6 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                   <Award className="w-4 h-4 shrink-0" />
                   <span>Rekap Nilai Kuis Siswa</span>
                 </button>
-
-                {/* Google Drive & Sheets Modal Trigger */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsGoogleWorkspaceOpen(true);
-                    setIsSidebarOpen(false);
-                  }}
-                  className="w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer text-teal-100 hover:text-white hover:bg-teal-800/50"
-                >
-                  <HardDrive className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Google Drive & Sheets</span>
-                </button>
-
 
                 {/* Tombol Simpan ke Firebase di Sidebar */}
                 <button
@@ -1712,15 +1682,6 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
           </div>,
           document.body
         )}
-
-      {/* Google Workspace (Drive & Sheets) Modal */}
-      <GoogleWorkspaceModal
-        isOpen={isGoogleWorkspaceOpen}
-        onClose={() => setIsGoogleWorkspaceOpen(false)}
-        allQuizProgress={allProgress}
-        students={students}
-      />
     </div>
   );
 };
-
