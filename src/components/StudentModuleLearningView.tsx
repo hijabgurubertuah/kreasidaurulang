@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   LearningModule,
   ModulePage,
@@ -404,24 +405,29 @@ export const StudentModuleLearningView: React.FC<StudentModuleLearningViewProps>
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-4 animate-fadeIn relative">
-      {/* TOMBOL PEMICU SIDEBAR MODUL DI KIRI TENGAH: 120 TINGGI, 30 LEBAR */}
-      <button
-        type="button"
-        onClick={() => setIsSidebarOpen(true)}
-        title="Buka Daftar Modul (Pindah Modul)"
-        aria-label="Buka Daftar Modul"
-        className="fixed left-0 top-1/2 -translate-y-1/2 z-40 w-[30px] h-[120px] bg-gradient-to-b from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white rounded-r-2xl shadow-xl shadow-emerald-950/25 flex flex-col items-center justify-between py-2.5 cursor-pointer border-r border-y border-emerald-400/40 active:scale-95 transition-all group"
-      >
-        <BookOpen className="w-4 h-4 text-emerald-200 group-hover:scale-110 transition-transform shrink-0" />
-        <div className="flex flex-col items-center justify-center text-[10px] font-black tracking-tighter leading-[1.1] text-emerald-100 select-none">
-          <span>M</span>
-          <span>O</span>
-          <span>D</span>
-          <span>U</span>
-          <span>L</span>
-        </div>
-        <ChevronRight className="w-3.5 h-3.5 text-emerald-300 animate-pulse shrink-0" />
-      </button>
+      {/* TOMBOL PEMICU SIDEBAR MODUL DI KIRI TENGAH: 120 TINGGI, 30 LEBAR - MENGGUNAKAN PORTAL AGAR TIDAK BISA TERSCROLL */}
+      {!isSidebarOpen && typeof document !== 'undefined' &&
+        createPortal(
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen(true)}
+            title="Buka Daftar Modul (Pindah Modul)"
+            aria-label="Buka Daftar Modul"
+            className="fixed left-0 top-1/2 -translate-y-1/2 z-[9990] w-[30px] h-[120px] bg-gradient-to-b from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white rounded-r-2xl shadow-2xl shadow-emerald-950/40 flex flex-col items-center justify-between py-2.5 cursor-pointer border-r-2 border-y border-emerald-300/50 active:scale-95 transition-all group select-none pointer-events-auto"
+            style={{ position: 'fixed', left: 0, top: '50%', transform: 'translateY(-50%)', zIndex: 9990 }}
+          >
+            <BookOpen className="w-4 h-4 text-emerald-200 group-hover:scale-110 transition-transform shrink-0" />
+            <div className="flex flex-col items-center justify-center text-[10px] font-black tracking-tighter leading-[1.1] text-emerald-100 select-none pointer-events-none">
+              <span>M</span>
+              <span>O</span>
+              <span>D</span>
+              <span>U</span>
+              <span>L</span>
+            </div>
+            <ChevronRight className="w-3.5 h-3.5 text-emerald-300 animate-pulse shrink-0" />
+          </button>,
+          document.body
+        )}
 
       {/* JIKA BELUM ADA MODUL SAMA SEKALI DI DATABASE */}
       {isLoading ? (
@@ -904,148 +910,157 @@ export const StudentModuleLearningView: React.FC<StudentModuleLearningViewProps>
         </div>
       ) : null}
 
-      {/* 3. SIDEBAR DAFTAR MODUL (SLIDE DARI KIRI DI HP & DESKTOP) */}
-      {isSidebarOpen && (
-        <div className="fixed inset-0 z-50 flex">
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
-            onClick={() => setIsSidebarOpen(false)}
-          />
+      {/* 3. SIDEBAR DAFTAR MODUL (SLIDE DARI KIRI DI HP & DESKTOP) - PORTAL KE BODY */}
+      {isSidebarOpen && typeof document !== 'undefined' &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex" style={{ position: 'fixed', inset: 0, zIndex: 9999 }}>
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity cursor-pointer"
+              style={{ position: 'fixed', inset: 0 }}
+              onClick={() => setIsSidebarOpen(false)}
+            />
 
-          {/* Drawer Container */}
-          <div className="relative w-80 max-w-[85vw] bg-white h-full shadow-2xl p-4 flex flex-col z-10 animate-slideRight">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <div className="flex items-center space-x-2">
-                <BookOpen className="w-5 h-5 text-emerald-600" />
-                <div>
-                  <h3 className="font-black text-sm text-slate-900 leading-tight">Daftar Modul Belajar</h3>
-                  <span className="text-[10px] text-slate-500 font-semibold block">SMP Negeri 1 Bengkalis</span>
+            {/* Drawer Container */}
+            <div className="relative w-80 max-w-[85vw] bg-white h-full shadow-2xl p-4 flex flex-col z-10 animate-slideRight">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                <div className="flex items-center space-x-2">
+                  <BookOpen className="w-5 h-5 text-emerald-600" />
+                  <div>
+                    <h3 className="font-black text-sm text-slate-900 leading-tight">Daftar Modul Belajar</h3>
+                    <span className="text-[10px] text-slate-500 font-semibold block">SMP Negeri 1 Bengkalis</span>
+                  </div>
                 </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsSidebarOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
-                title="Tutup Menu"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Profil Siswa Singkat */}
-            <div className="my-2 p-2.5 bg-emerald-50 rounded-xl border border-emerald-200/70 text-xs">
-              <span className="text-[10px] uppercase font-black text-emerald-700 block tracking-wider">
-                Portal Belajar Siswa
-              </span>
-              <p className="font-bold text-slate-900 truncate">{student.name}</p>
-              <p className="text-[11px] text-emerald-800">NISN: {student.nisn} ({student.className})</p>
-            </div>
-
-            <div className="flex-1 overflow-y-auto py-2 space-y-2">
-              {modules.map((m, idx) => {
-                const status = getModuleStatus(m);
-                const isSelected = selectedModuleId === m.id;
-                const StatusIcon = status.icon;
-                const prog = progressList.find((p) => p.moduleId === m.id);
-
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => handleSelectModule(m)}
-                    className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer flex flex-col space-y-1.5 ${
-                      isSelected
-                        ? 'bg-emerald-50/90 border-emerald-500 shadow-xs ring-1 ring-emerald-500'
-                        : 'bg-white border-slate-200 hover:bg-slate-50 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-slate-900 truncate">
-                        {idx + 1}. {m.title}
-                      </span>
-                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border flex items-center space-x-1 shrink-0 ${status.color}`}>
-                        <StatusIcon className="w-2.5 h-2.5" />
-                        <span>{status.label}</span>
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[10px] text-slate-500">
-                      <span>{m.pages?.length || 0} halaman materi</span>
-                      {prog?.isCompleted && (
-                        <span className="font-bold text-emerald-700">
-                          Nilai: {prog.quizScore ?? '-'}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 4. MODAL PASSWORD MODUL */}
-      {passwordModalModule && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs"
-            onClick={() => setPasswordModalModule(null)}
-          />
-
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 relative z-10 space-y-4 animate-scaleUp">
-            <div className="text-center space-y-2">
-              <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 mx-auto flex items-center justify-center">
-                <KeyRound className="w-6 h-6" />
-              </div>
-              <h3 className="font-black text-base text-slate-900">
-                Modul Ini Terkunci
-              </h3>
-              <p className="text-xs text-slate-500">
-                Silakan masukkan kata sandi (password) untuk membuka <strong>{passwordModalModule.title}</strong>.
-              </p>
-            </div>
-
-            <form onSubmit={handleVerifyPassword} className="space-y-3">
-              <div>
-                <input
-                  type="password"
-                  value={inputPassword}
-                  onChange={(e) => {
-                    setInputPassword(e.target.value);
-                    setPasswordError('');
-                  }}
-                  placeholder="Ketik password modul..."
-                  className="w-full px-4 py-3 text-center text-sm font-bold rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50"
-                  autoFocus
-                />
-                {passwordError && (
-                  <p className="text-rose-600 text-xs font-semibold text-center mt-2">
-                    {passwordError}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex items-center space-x-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => setPasswordModalModule(null)}
-                  className="flex-1 py-3 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                  onClick={() => setIsSidebarOpen(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                  title="Tutup Menu"
                 >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-3 text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-xs cursor-pointer"
-                >
-                  Buka Modul
+                  <X className="w-5 h-5" />
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+
+              {/* Profil Siswa Singkat */}
+              <div className="my-2 p-2.5 bg-emerald-50 rounded-xl border border-emerald-200/70 text-xs">
+                <span className="text-[10px] uppercase font-black text-emerald-700 block tracking-wider">
+                  Portal Belajar Siswa
+                </span>
+                <p className="font-bold text-slate-900 truncate">{student.name}</p>
+                <p className="text-[11px] text-emerald-800">NISN: {student.nisn} ({student.className})</p>
+              </div>
+
+              <div className="flex-1 overflow-y-auto py-2 space-y-2">
+                {modules.map((m, idx) => {
+                  const status = getModuleStatus(m);
+                  const isSelected = selectedModuleId === m.id;
+                  const StatusIcon = status.icon;
+                  const prog = progressList.find((p) => p.moduleId === m.id);
+
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => handleSelectModule(m)}
+                      className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer flex flex-col space-y-1.5 ${
+                        isSelected
+                          ? 'bg-emerald-50/90 border-emerald-500 shadow-xs ring-1 ring-emerald-500'
+                          : 'bg-white border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-slate-900 truncate">
+                          {idx + 1}. {m.title}
+                        </span>
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border flex items-center space-x-1 shrink-0 ${status.color}`}>
+                          <StatusIcon className="w-2.5 h-2.5" />
+                          <span>{status.label}</span>
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[10px] text-slate-500">
+                        <span>{m.pages?.length || 0} halaman materi</span>
+                        {prog?.isCompleted && (
+                          <span className="font-bold text-emerald-700">
+                            Nilai: {prog.quizScore ?? '-'}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* 4. MODAL PASSWORD MODUL */}
+      {passwordModalModule && typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[99999] flex items-center justify-center p-4"
+            style={{ position: 'fixed', inset: 0, zIndex: 99999 }}
+          >
+            <div
+              className="fixed inset-0 bg-black/60 backdrop-blur-xs"
+              style={{ position: 'fixed', inset: 0 }}
+              onClick={() => setPasswordModalModule(null)}
+            />
+
+            <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 relative z-10 space-y-4 animate-scaleUp">
+              <div className="text-center space-y-2">
+                <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 mx-auto flex items-center justify-center">
+                  <KeyRound className="w-6 h-6" />
+                </div>
+                <h3 className="font-black text-base text-slate-900">
+                  Modul Ini Terkunci
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Silakan masukkan kata sandi (password) untuk membuka <strong>{passwordModalModule.title}</strong>.
+                </p>
+              </div>
+
+              <form onSubmit={handleVerifyPassword} className="space-y-3">
+                <div>
+                  <input
+                    type="password"
+                    value={inputPassword}
+                    onChange={(e) => {
+                      setInputPassword(e.target.value);
+                      setPasswordError('');
+                    }}
+                    placeholder="Ketik password modul..."
+                    className="w-full px-4 py-3 text-center text-sm font-bold rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50"
+                    autoFocus
+                  />
+                  {passwordError && (
+                    <p className="text-rose-600 text-xs font-semibold text-center mt-2">
+                      {passwordError}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center space-x-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setPasswordModalModule(null)}
+                    className="flex-1 py-3 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-xs cursor-pointer"
+                  >
+                    Buka Modul
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

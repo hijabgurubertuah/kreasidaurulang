@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   LearningModule,
   ModulePage,
@@ -378,24 +379,29 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({ students = [
 
   return (
     <div className="space-y-4 animate-fadeIn relative">
-      {/* TOMBOL PEMICU SIDEBAR MODUL ADMIN DI KIRI TENGAH: 120 TINGGI, 30 LEBAR */}
-      <button
-        type="button"
-        onClick={() => setIsSidebarOpen(true)}
-        title="Buka Daftar Modul"
-        aria-label="Buka Daftar Modul"
-        className="fixed left-0 top-1/2 -translate-y-1/2 z-40 w-[30px] h-[120px] bg-gradient-to-b from-teal-700 via-emerald-700 to-slate-800 hover:from-teal-600 hover:to-emerald-600 text-white rounded-r-2xl shadow-xl shadow-slate-950/30 flex flex-col items-center justify-between py-2.5 cursor-pointer border-r border-y border-teal-400/40 active:scale-95 transition-all group"
-      >
-        <BookOpen className="w-4 h-4 text-teal-200 group-hover:scale-110 transition-transform shrink-0" />
-        <div className="flex flex-col items-center justify-center text-[10px] font-black tracking-tighter leading-[1.1] text-teal-100 select-none">
-          <span>M</span>
-          <span>O</span>
-          <span>D</span>
-          <span>U</span>
-          <span>L</span>
-        </div>
-        <ChevronRight className="w-3.5 h-3.5 text-teal-300 animate-pulse shrink-0" />
-      </button>
+      {/* TOMBOL PEMICU SIDEBAR MODUL ADMIN DI KIRI TENGAH: 120 TINGGI, 30 LEBAR - MENGGUNAKAN PORTAL AGAR TIDAK BISA TERSCROLL */}
+      {!isSidebarOpen && typeof document !== 'undefined' &&
+        createPortal(
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen(true)}
+            title="Buka Daftar Modul"
+            aria-label="Buka Daftar Modul"
+            className="fixed left-0 top-1/2 -translate-y-1/2 z-[9990] w-[30px] h-[120px] bg-gradient-to-b from-teal-700 via-emerald-700 to-slate-800 hover:from-teal-600 hover:to-emerald-600 text-white rounded-r-2xl shadow-2xl shadow-slate-950/40 flex flex-col items-center justify-between py-2.5 cursor-pointer border-r-2 border-y border-teal-300/50 active:scale-95 transition-all group select-none pointer-events-auto"
+            style={{ position: 'fixed', left: 0, top: '50%', transform: 'translateY(-50%)', zIndex: 9990 }}
+          >
+            <BookOpen className="w-4 h-4 text-teal-200 group-hover:scale-110 transition-transform shrink-0" />
+            <div className="flex flex-col items-center justify-center text-[10px] font-black tracking-tighter leading-[1.1] text-teal-100 select-none pointer-events-none">
+              <span>M</span>
+              <span>O</span>
+              <span>D</span>
+              <span>U</span>
+              <span>L</span>
+            </div>
+            <ChevronRight className="w-3.5 h-3.5 text-teal-300 animate-pulse shrink-0" />
+          </button>,
+          document.body
+        )}
 
       {/* Toast Notification */}
       {saveSuccessMsg && (
@@ -1217,245 +1223,251 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({ students = [
       {/* ======================================================== */}
       {/* 4. MODAL KONFIRMASI HAPUS */}
       {/* ======================================================== */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs"
-            onClick={() => setDeleteConfirm(null)}
-          />
+      {deleteConfirm && typeof document !== 'undefined' &&
+        createPortal(
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4" style={{ position: 'fixed', inset: 0, zIndex: 99999 }}>
+            <div
+              className="fixed inset-0 bg-black/60 backdrop-blur-xs"
+              style={{ position: 'fixed', inset: 0 }}
+              onClick={() => setDeleteConfirm(null)}
+            />
 
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 relative z-10 space-y-4 animate-scaleUp text-center">
-            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 mx-auto flex items-center justify-center">
-              <Trash2 className="w-6 h-6" />
-            </div>
-
-            <div>
-              <h4 className="font-black text-base text-slate-900">
-                Konfirmasi Hapus
-              </h4>
-              <p className="text-xs text-slate-500 mt-1">
-                Apakah Anda yakin ingin menghapus {deleteConfirm.type === 'module' ? 'modul' : 'halaman'}:{' '}
-                <strong>"{deleteConfirm.title}"</strong>? Tindakan ini tidak dapat dibatalkan.
-              </p>
-            </div>
-
-            <div className="flex items-center space-x-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setDeleteConfirm(null)}
-                className="flex-1 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (deleteConfirm.type === 'module') {
-                    handleDeleteModule(deleteConfirm.id, deleteConfirm.title);
-                  } else if (deleteConfirm.type === 'page') {
-                    handleDeletePage(deleteConfirm.id);
-                  }
-                }}
-                className="flex-1 py-2.5 text-xs font-black bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-xs cursor-pointer"
-              >
-                Hapus Sekarang
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SIDEBAR DAFTAR MODUL GURU (SLIDE DARI KIRI) */}
-      {isSidebarOpen && (
-        <div className="fixed inset-0 z-50 flex">
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
-            onClick={() => setIsSidebarOpen(false)}
-          />
-
-          {/* Drawer Container */}
-          <div className="relative w-84 sm:w-96 max-w-[88vw] bg-white h-full shadow-2xl p-4 flex flex-col z-50 animate-slideRight">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <div className="flex items-center space-x-2">
-                <BookOpen className="w-5 h-5 text-teal-700" />
-                <div>
-                  <h3 className="font-black text-sm text-slate-900 leading-tight">Daftar Modul Guru</h3>
-                  <span className="text-[10px] text-slate-500 font-semibold block">{modules.length} Modul Tersedia</span>
-                </div>
+            <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 relative z-10 space-y-4 animate-scaleUp text-center">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 mx-auto flex items-center justify-center">
+                <Trash2 className="w-6 h-6" />
               </div>
-              <button
-                type="button"
-                onClick={() => setIsSidebarOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
-                title="Tutup Menu"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            {/* Quick Actions in Sidebar */}
-            <div className="py-2.5 space-y-2 border-b border-slate-100">
-              <button
-                type="button"
-                onClick={() => {
-                  handleAddNewModule();
-                }}
-                className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center space-x-1.5"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Tambah Modul Baru</span>
-              </button>
+              <div>
+                <h4 className="font-black text-base text-slate-900">
+                  Konfirmasi Hapus
+                </h4>
+                <p className="text-xs text-slate-500 mt-1">
+                  Apakah Anda yakin ingin menghapus {deleteConfirm.type === 'module' ? 'modul' : 'halaman'}:{' '}
+                  <strong>"{deleteConfirm.title}"</strong>? Tindakan ini tidak dapat dibatalkan.
+                </p>
+              </div>
 
-              <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl">
+              <div className="flex items-center space-x-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setSubTab('modules');
-                    setIsSidebarOpen(false);
-                  }}
-                  className={`py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all cursor-pointer text-center ${
-                    subTab === 'modules' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-600'
-                  }`}
+                  onClick={() => setDeleteConfirm(null)}
+                  className="flex-1 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
                 >
-                  Editor Modul
+                  Batal
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    setSubTab('scores');
-                    setIsSidebarOpen(false);
+                    if (deleteConfirm.type === 'module') {
+                      handleDeleteModule(deleteConfirm.id, deleteConfirm.title);
+                    } else if (deleteConfirm.type === 'page') {
+                      handleDeletePage(deleteConfirm.id);
+                    }
                   }}
-                  className={`py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all cursor-pointer text-center ${
-                    subTab === 'scores' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-600'
-                  }`}
+                  className="flex-1 py-2.5 text-xs font-black bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-xs cursor-pointer"
                 >
-                  Rekap Nilai
+                  Hapus Sekarang
                 </button>
               </div>
             </div>
+          </div>,
+          document.body
+        )}
 
-            {/* Modul List in Sidebar */}
-            <div className="flex-1 overflow-y-auto py-3 space-y-2.5">
-              {modules.length === 0 ? (
-                <div className="text-center py-8 text-xs text-slate-400">
-                  Belum ada modul.
+      {/* SIDEBAR DAFTAR MODUL GURU (SLIDE DARI KIRI) - PORTAL KE BODY */}
+      {isSidebarOpen && typeof document !== 'undefined' &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex" style={{ position: 'fixed', inset: 0, zIndex: 9999 }}>
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity cursor-pointer"
+              style={{ position: 'fixed', inset: 0 }}
+              onClick={() => setIsSidebarOpen(false)}
+            />
+
+            {/* Drawer Container */}
+            <div className="relative w-84 sm:w-96 max-w-[88vw] bg-white h-full shadow-2xl p-4 flex flex-col z-50 animate-slideRight">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                <div className="flex items-center space-x-2">
+                  <BookOpen className="w-5 h-5 text-teal-700" />
+                  <div>
+                    <h3 className="font-black text-sm text-slate-900 leading-tight">Daftar Modul Guru</h3>
+                    <span className="text-[10px] text-slate-500 font-semibold block">{modules.length} Modul Tersedia</span>
+                  </div>
                 </div>
-              ) : (
-                modules.map((mod, idx) => {
-                  const isSelected = activeModule?.id === mod.id && subTab === 'modules';
-                  return (
-                    <div
-                      key={mod.id}
-                      className={`p-3 rounded-2xl border transition-all flex flex-col space-y-2 ${
-                        isSelected
-                          ? 'bg-emerald-50/80 border-emerald-500 shadow-xs ring-1 ring-emerald-500'
-                          : 'bg-white border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-1.5">
-                        <div
-                          className="flex items-center space-x-2 min-w-0 flex-1 cursor-pointer"
-                          onClick={() => {
-                            setActiveModule(mod);
-                            setSubTab('modules');
-                            setIsSidebarOpen(false);
-                          }}
-                        >
-                          <div className={`w-7 h-7 rounded-lg font-black text-xs flex items-center justify-center shrink-0 ${
-                            isSelected ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700'
+                <button
+                  type="button"
+                  onClick={() => setIsSidebarOpen(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                  title="Tutup Menu"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Quick Actions in Sidebar */}
+              <div className="py-2.5 space-y-2 border-b border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleAddNewModule();
+                  }}
+                  className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center space-x-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Tambah Modul Baru</span>
+                </button>
+
+                <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSubTab('modules');
+                      setIsSidebarOpen(false);
+                    }}
+                    className={`py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all cursor-pointer text-center ${
+                      subTab === 'modules' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-600'
+                    }`}
+                  >
+                    Editor Modul
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSubTab('scores');
+                      setIsSidebarOpen(false);
+                    }}
+                    className={`py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all cursor-pointer text-center ${
+                      subTab === 'scores' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-600'
+                    }`}
+                  >
+                    Rekap Nilai
+                  </button>
+                </div>
+              </div>
+
+              {/* Modul List in Sidebar */}
+              <div className="flex-1 overflow-y-auto py-3 space-y-2.5">
+                {modules.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-slate-400">
+                    Belum ada modul.
+                  </div>
+                ) : (
+                  modules.map((mod, idx) => {
+                    const isSelected = activeModule?.id === mod.id && subTab === 'modules';
+                    return (
+                      <div
+                        key={mod.id}
+                        className={`p-3 rounded-2xl border transition-all flex flex-col space-y-2 ${
+                          isSelected
+                            ? 'bg-emerald-50/80 border-emerald-500 shadow-xs ring-1 ring-emerald-500'
+                            : 'bg-white border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-1.5">
+                          <div
+                            className="flex items-center space-x-2 min-w-0 flex-1 cursor-pointer"
+                            onClick={() => {
+                              setActiveModule(mod);
+                              setSubTab('modules');
+                              setIsSidebarOpen(false);
+                            }}
+                          >
+                            <div className={`w-7 h-7 rounded-lg font-black text-xs flex items-center justify-center shrink-0 ${
+                              isSelected ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700'
+                            }`}>
+                              {idx + 1}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <h4 className="font-bold text-xs text-slate-900 truncate">
+                                {mod.title}
+                              </h4>
+                              <span className="text-[10px] text-slate-500 block truncate">
+                                {mod.pages?.length || 0} Halaman
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Status Kunci Password */}
+                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border flex items-center space-x-1 shrink-0 ${
+                            mod.isLockedWithPassword
+                              ? 'bg-rose-50 text-rose-700 border-rose-300'
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                           }`}>
-                            {idx + 1}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <h4 className="font-bold text-xs text-slate-900 truncate">
-                              {mod.title}
-                            </h4>
-                            <span className="text-[10px] text-slate-500 block truncate">
-                              {mod.pages?.length || 0} Halaman
-                            </span>
-                          </div>
+                            {mod.isLockedWithPassword ? <Lock className="w-2.5 h-2.5" /> : <Unlock className="w-2.5 h-2.5" />}
+                            <span>{mod.isLockedWithPassword ? 'Kunci' : 'Buka'}</span>
+                          </span>
                         </div>
 
-                        {/* Status Kunci Password */}
-                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border flex items-center space-x-1 shrink-0 ${
-                          mod.isLockedWithPassword
-                            ? 'bg-rose-50 text-rose-700 border-rose-300'
-                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        }`}>
-                          {mod.isLockedWithPassword ? <Lock className="w-2.5 h-2.5" /> : <Unlock className="w-2.5 h-2.5" />}
-                          <span>{mod.isLockedWithPassword ? 'Kunci' : 'Buka'}</span>
-                        </span>
-                      </div>
+                        {/* Actions Modul */}
+                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                          <div className="flex items-center space-x-1">
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMoveModule(idx, 'up');
+                              }}
+                              className="p-1 hover:bg-slate-100 text-slate-600 disabled:opacity-30 rounded-lg cursor-pointer"
+                              title="Geser Naik"
+                            >
+                              <MoveUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === modules.length - 1}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMoveModule(idx, 'down');
+                              }}
+                              className="p-1 hover:bg-slate-100 text-slate-600 disabled:opacity-30 rounded-lg cursor-pointer"
+                              title="Geser Turun"
+                            >
+                              <MoveDown className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteConfirm({
+                                  type: 'module',
+                                  id: mod.id,
+                                  title: mod.title,
+                                });
+                              }}
+                              className="p-1 hover:bg-rose-50 text-rose-600 rounded-lg cursor-pointer"
+                              title="Hapus Modul"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
 
-                      {/* Actions Modul */}
-                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                        <div className="flex items-center space-x-1">
                           <button
                             type="button"
-                            disabled={idx === 0}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleMoveModule(idx, 'up');
+                            onClick={() => {
+                              setActiveModule(mod);
+                              setSubTab('modules');
+                              setIsSidebarOpen(false);
                             }}
-                            className="p-1 hover:bg-slate-100 text-slate-600 disabled:opacity-30 rounded-lg cursor-pointer"
-                            title="Geser Naik"
+                            className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-slate-100 text-slate-700 hover:bg-emerald-50 hover:text-emerald-800'
+                            }`}
                           >
-                            <MoveUp className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={idx === modules.length - 1}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleMoveModule(idx, 'down');
-                            }}
-                            className="p-1 hover:bg-slate-100 text-slate-600 disabled:opacity-30 rounded-lg cursor-pointer"
-                            title="Geser Turun"
-                          >
-                            <MoveDown className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteConfirm({
-                                type: 'module',
-                                id: mod.id,
-                                title: mod.title,
-                              });
-                            }}
-                            className="p-1 hover:bg-rose-50 text-rose-600 rounded-lg cursor-pointer"
-                            title="Hapus Modul"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            {isSelected ? 'Sedang Diedit' : 'Edit Modul'}
                           </button>
                         </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveModule(mod);
-                            setSubTab('modules');
-                            setIsSidebarOpen(false);
-                          }}
-                          className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
-                            isSelected
-                              ? 'bg-emerald-600 text-white'
-                              : 'bg-slate-100 text-slate-700 hover:bg-emerald-50 hover:text-emerald-800'
-                          }`}
-                        >
-                          {isSelected ? 'Sedang Diedit' : 'Edit Modul'}
-                        </button>
                       </div>
-                    </div>
-                  );
-                })
-              )}
+                    );
+                  })
+                )}
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 };
