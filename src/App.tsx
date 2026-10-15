@@ -47,6 +47,7 @@ import {
   deduplicateStudentsInDb,
   resetAllStudentScoresInDb,
   resetSingleMeetingScoresInDb,
+  initializeModulesIfNeeded,
   listenToSchedules,
   saveScheduleInDb,
   listenToCriteria,
@@ -120,6 +121,9 @@ export default function App() {
     // Try seeding default data if Firestore is empty
     initializeFirestoreIfNeeded().catch((e) =>
       console.warn('Initialize firestore error:', e)
+    );
+    initializeModulesIfNeeded().catch((e) =>
+      console.warn('Initialize modules error:', e)
     );
 
     // Subscribe to students with instant real-time sync across devices

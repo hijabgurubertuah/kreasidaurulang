@@ -1,7 +1,8 @@
-import React from 'react';
-import { LogOut, Award } from 'lucide-react';
+import React, { useState } from 'react';
+import { LogOut, Award, BookOpen, Calendar } from 'lucide-react';
 import { Student, MeetingSchedule } from '../types';
 import { isMeetingOpened, formatIndonesianDate } from '../utils/scheduleHelper';
+import { StudentModuleLearningView } from './StudentModuleLearningView';
 
 interface StudentPortalViewProps {
   student: Student;
@@ -174,6 +175,8 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
   schedules = [],
   onLogout,
 }) => {
+  const [activeTab, setActiveTab] = useState<'sikap' | 'modul'>('modul');
+
   // Calculate average score based strictly on OPENED meetings (activeDate <= today)
   const meetingScores = student.meetingScores || [];
   const meetingAbsences = student.meetingAbsences || [];
@@ -204,132 +207,171 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
 
   return (
     <div className="w-full max-w-4xl mx-auto px-3 sm:px-6 py-4 space-y-4 animate-fadeIn">
-      {/* PALING ATAS: KOTAK RATA-RATA NILAI SIKAP (WARNA SESUAI NILAI RATA-RATA) */}
-      <div className={`rounded-3xl p-5 sm:p-7 pr-12 sm:pr-14 flex flex-col sm:flex-row flex-wrap items-center justify-between gap-4 relative overflow-hidden ${heroStyle.heroBg}`}>
-        <div className="text-center sm:text-left space-y-1.5 z-10 min-w-0 flex-1">
-          <div className={`leading-tight uppercase ${heroStyle.subtext}`}>
-            <span className="text-sm sm:text-base font-black tracking-wide block">
-              NILAI SIKAP
-            </span>
-            <span className="text-[10px] sm:text-[11px] font-bold tracking-widest block opacity-90 my-0.5">
-              SELAMA
-            </span>
-            <span className="text-[11px] sm:text-xs font-extrabold tracking-wider block">
-              KOKURIKULER KREASI DAUR ULANG
-            </span>
-          </div>
-          <h2 className="text-2xl sm:text-3xl font-black truncate leading-tight pt-1">
-            {student.name}
-          </h2>
-          <div className={`text-xs font-mono truncate ${heroStyle.subtext}`}>
-            NISN: <strong>{student.nisn}</strong> • {student.className}
-          </div>
-          <div className={`text-xs mt-1 ${heroStyle.subtext}`}>
-            Pertemuan Terbuka: <strong>{totalOpenedMeetings}</strong> dari 20
-          </div>
-        </div>
+      {/* TAB NAVIGASI UTAMA SISWA (PENILAIAN SIKAP & MATERI MODUL) */}
+      <div className="flex items-center justify-between bg-white p-1.5 rounded-2xl border border-slate-200 shadow-xs gap-1.5">
+        <button
+          type="button"
+          onClick={() => setActiveTab('modul')}
+          className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center justify-center space-x-2 ${
+            activeTab === 'modul'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <BookOpen className="w-4 h-4 shrink-0" />
+          <span>Materi Modul</span>
+        </button>
 
-        <div className="flex flex-col items-center justify-center bg-black/15 backdrop-blur-md px-6 py-3.5 rounded-2xl border border-white/20 min-w-[160px] z-10 shrink-0">
-          <div className="text-4xl sm:text-5xl font-black tracking-tight">
-            {totalOpenedMeetings > 0 ? averageScore : '-'}
-          </div>
-          <div className={`mt-2 px-4 py-1 rounded-full text-xs sm:text-sm font-black uppercase tracking-wider border animate-pulse shadow-xs ${heroStyle.heroBadge}`}>
-            {totalOpenedMeetings > 0 ? heroStyle.predicate : 'Belum Ada Penilaian'}
-          </div>
-        </div>
-
-        {/* UCAPAN SESUAI RATA-RATA NILAI (TANPA ICON BALON TEKS) */}
-        <div className="w-full z-10 pt-3 mt-1 border-t border-black/10 sm:border-white/20 flex items-center justify-center sm:justify-start">
-          <p className={`text-xs sm:text-sm font-bold italic text-center sm:text-left ${heroStyle.subtext}`}>
-            "{selectedQuote}"
-          </p>
-        </div>
+        <button
+          type="button"
+          onClick={() => setActiveTab('sikap')}
+          className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center justify-center space-x-2 ${
+            activeTab === 'sikap'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <Calendar className="w-4 h-4 shrink-0" />
+          <span>Penilaian Sikap (20 Pertemuan)</span>
+        </button>
 
         <button
           type="button"
           onClick={onLogout}
-          className="absolute top-3 right-3 p-2 bg-black/20 hover:bg-black/30 rounded-xl transition-colors cursor-pointer text-white/90 hover:text-white"
-          title="Keluar / Switch Akun"
+          className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer shrink-0"
+          title="Keluar / Ganti Akun"
         >
           <LogOut className="w-4 h-4" />
         </button>
       </div>
 
-      {/* GRID 2 KEKANAN (HP) & 10 KE BAWAH = 20 KOTAK PERTEMUAN */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-xs font-bold text-slate-700 px-1">
-          <span>Nilai Pertemuan (1 s.d. 20)</span>
-          <span className="text-[11px] text-slate-500 font-normal">20 Kali Penilaian</span>
-        </div>
+      {/* KONTEN TAB: MATERI MODUL */}
+      {activeTab === 'modul' && (
+        <StudentModuleLearningView student={student} />
+      )}
 
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-5">
-          {Array.from({ length: 20 }, (_, idx) => {
-            const meetingNum = idx + 1;
-            const sched = schedules.find((s) => s.meetingNumber === meetingNum);
-            const isOpened = isMeetingOpened(sched);
-            const isAbsent = meetingAbsences[idx] === true;
-            let score: number | null = null;
-            let statusText = 'Terkunci';
-
-            if (isOpened) {
-              if (isAbsent) {
-                score = 0;
-                statusText = 'Tidak Hadir';
-              } else {
-                const raw = meetingScores[idx];
-                score = typeof raw === 'number' && raw !== null ? raw : 80;
-              }
-            } else if (sched?.activeDate && sched.activeDate.trim() !== '') {
-              statusText = `Buka: ${formatIndonesianDate(sched.activeDate)}`;
-            } else {
-              statusText = 'Belum Diatur';
-            }
-
-            const itemStyle = getScoreColorScheme(score);
-
-            return (
-              <div
-                key={meetingNum}
-                className={`p-3 rounded-2xl border flex flex-col items-center justify-between space-y-2 transition-all ${
-                  isOpened ? itemStyle.card : 'bg-slate-50 text-slate-400 border-slate-200 opacity-75'
-                }`}
-              >
-                {/* Score Value (Besar) */}
-                <div className="text-center py-0.5">
-                  <div className={`text-3xl sm:text-4xl font-black tracking-tight ${isOpened ? itemStyle.textScore : 'text-slate-300'}`}>
-                    {score !== null ? score : '-'}
-                  </div>
-                </div>
-
-                {/* Predikat di Bawah Nilai (Berdenyut) */}
-                {score !== null ? (
-                  <div className={`text-[10px] sm:text-xs font-black uppercase px-2 py-0.5 rounded-md border animate-pulse shadow-2xs ${itemStyle.badge}`}>
-                    {itemStyle.predicate}
-                  </div>
-                ) : (
-                  <div className="text-[10px] font-bold text-slate-500 bg-slate-200/80 px-2 py-0.5 rounded-md truncate max-w-full text-center">
-                    {statusText}
-                  </div>
-                )}
-
-                {/* Pertemuan Label */}
-                <div className={`text-[10px] font-bold uppercase tracking-wider text-center pt-1 border-t border-black/10 sm:border-white/20 w-full ${isOpened ? itemStyle.label : 'text-slate-400'}`}>
-                  Pertemuan {meetingNum}
-                </div>
+      {/* KONTEN TAB: PENILAIAN SIKAP (FITUR LAMA TETAP TERJAGA 100%) */}
+      {activeTab === 'sikap' && (
+        <div className="space-y-4 animate-fadeIn">
+          {/* PALING ATAS: KOTAK RATA-RATA NILAI SIKAP (WARNA SESUAI NILAI RATA-RATA) */}
+          <div className={`rounded-3xl p-5 sm:p-7 pr-12 sm:pr-14 flex flex-col sm:flex-row flex-wrap items-center justify-between gap-4 relative overflow-hidden ${heroStyle.heroBg}`}>
+            <div className="text-center sm:text-left space-y-1.5 z-10 min-w-0 flex-1">
+              <div className={`leading-tight uppercase ${heroStyle.subtext}`}>
+                <span className="text-sm sm:text-base font-black tracking-wide block">
+                  NILAI SIKAP
+                </span>
+                <span className="text-[10px] sm:text-[11px] font-bold tracking-widest block opacity-90 my-0.5">
+                  SELAMA
+                </span>
+                <span className="text-[11px] sm:text-xs font-extrabold tracking-wider block">
+                  KOKURIKULER KREASI DAUR ULANG
+                </span>
               </div>
-            );
-          })}
-        </div>
-      </div>
+              <h2 className="text-2xl sm:text-3xl font-black truncate leading-tight pt-1">
+                {student.name}
+              </h2>
+              <div className={`text-xs font-mono truncate ${heroStyle.subtext}`}>
+                NISN: <strong>{student.nisn}</strong> • {student.className}
+              </div>
+              <div className={`text-xs mt-1 ${heroStyle.subtext}`}>
+                Pertemuan Terbuka: <strong>{totalOpenedMeetings}</strong> dari 20
+              </div>
+            </div>
 
-      {/* Catatan Ringkas Guru (Jika ada) */}
-      {student.notes && (
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs flex items-start space-x-3">
-          <Award className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-          <div className="text-xs text-slate-700">
-            <strong className="font-bold text-slate-900 block mb-0.5">Catatan Guru:</strong>
-            <p className="italic">"{student.notes}"</p>
+            <div className="flex flex-col items-center justify-center bg-black/15 backdrop-blur-md px-6 py-3.5 rounded-2xl border border-white/20 min-w-[160px] z-10 shrink-0">
+              <div className="text-4xl sm:text-5xl font-black tracking-tight">
+                {totalOpenedMeetings > 0 ? averageScore : '-'}
+              </div>
+              <div className={`mt-2 px-4 py-1 rounded-full text-xs sm:text-sm font-black uppercase tracking-wider border animate-pulse shadow-xs ${heroStyle.heroBadge}`}>
+                {totalOpenedMeetings > 0 ? heroStyle.predicate : 'Belum Ada Penilaian'}
+              </div>
+            </div>
+
+            {/* UCAPAN SESUAI RATA-RATA NILAI (TANPA ICON BALON TEKS) */}
+            <div className="w-full z-10 pt-3 mt-1 border-t border-black/10 sm:border-white/20 flex items-center justify-center sm:justify-start">
+              <p className={`text-xs sm:text-sm font-bold italic text-center sm:text-left ${heroStyle.subtext}`}>
+                "{selectedQuote}"
+              </p>
+            </div>
           </div>
+
+          {/* GRID 2 KEKANAN (HP) & 10 KE BAWAH = 20 KOTAK PERTEMUAN */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-700 px-1">
+              <span>Nilai Pertemuan (1 s.d. 20)</span>
+              <span className="text-[11px] text-slate-500 font-normal">20 Kali Penilaian</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-5">
+              {Array.from({ length: 20 }, (_, idx) => {
+                const meetingNum = idx + 1;
+                const sched = schedules.find((s) => s.meetingNumber === meetingNum);
+                const isOpened = isMeetingOpened(sched);
+                const isAbsent = meetingAbsences[idx] === true;
+                let score: number | null = null;
+                let statusText = 'Terkunci';
+
+                if (isOpened) {
+                  if (isAbsent) {
+                    score = 0;
+                    statusText = 'Tidak Hadir';
+                  } else {
+                    const raw = meetingScores[idx];
+                    score = typeof raw === 'number' && raw !== null ? raw : 80;
+                  }
+                } else if (sched?.activeDate && sched.activeDate.trim() !== '') {
+                  statusText = `Buka: ${formatIndonesianDate(sched.activeDate)}`;
+                } else {
+                  statusText = 'Belum Diatur';
+                }
+
+                const itemStyle = getScoreColorScheme(score);
+
+                return (
+                  <div
+                    key={meetingNum}
+                    className={`p-3 rounded-2xl border flex flex-col items-center justify-between space-y-2 transition-all ${
+                      isOpened ? itemStyle.card : 'bg-slate-50 text-slate-400 border-slate-200 opacity-75'
+                    }`}
+                  >
+                    {/* Score Value (Besar) */}
+                    <div className="text-center py-0.5">
+                      <div className={`text-3xl sm:text-4xl font-black tracking-tight ${isOpened ? itemStyle.textScore : 'text-slate-300'}`}>
+                        {score !== null ? score : '-'}
+                      </div>
+                    </div>
+
+                    {/* Predikat di Bawah Nilai (Berdenyut) */}
+                    {score !== null ? (
+                      <div className={`text-[10px] sm:text-xs font-black uppercase px-2 py-0.5 rounded-md border animate-pulse shadow-2xs ${itemStyle.badge}`}>
+                        {itemStyle.predicate}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] font-bold text-slate-500 bg-slate-200/80 px-2 py-0.5 rounded-md truncate max-w-full text-center">
+                        {statusText}
+                      </div>
+                    )}
+
+                    {/* Pertemuan Label */}
+                    <div className={`text-[10px] font-bold uppercase tracking-wider text-center pt-1 border-t border-black/10 sm:border-white/20 w-full ${isOpened ? itemStyle.label : 'text-slate-400'}`}>
+                      Pertemuan {meetingNum}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Catatan Ringkas Guru (Jika ada) */}
+          {student.notes && (
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs flex items-start space-x-3">
+              <Award className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <div className="text-xs text-slate-700">
+                <strong className="font-bold text-slate-900 block mb-0.5">Catatan Guru:</strong>
+                <p className="italic">"{student.notes}"</p>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -14,12 +14,13 @@ import {
   limit,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { ClassRoom, Student, TeacherCode, MeetingSchedule, SystemLog, EvaluationCriteriaConfig } from '../types';
+import { ClassRoom, Student, TeacherCode, MeetingSchedule, SystemLog, EvaluationCriteriaConfig, LearningModule, StudentModuleProgress } from '../types';
 import {
   DEFAULT_CLASSES,
   DEFAULT_STUDENTS,
   DEFAULT_TEACHER_CODES,
   DEFAULT_EVALUATION_CRITERIA,
+  DEFAULT_MODULES,
 } from '../data/defaultData';
 import { isMeetingOpened, calculateStudentAverageScore } from '../utils/scheduleHelper';
 import { recordQuotaUsage, calculateRealtimeStorageSize } from './quotaService';
@@ -1306,6 +1307,211 @@ export function listenToSystemLogs(
     );
   } catch (err) {
     console.warn('listenToSystemLogs failed:', err);
+    return () => {};
+  }
+}
+
+// ==========================================
+// MATERI MODUL & STUDENT PROGRESS FIRESTORE
+// ==========================================
+
+const MODULES_COL = 'learning_modules';
+const MODULE_PROGRESS_COL = 'student_module_progress';
+
+/**
+ * Split large game HTML chunks if needed to stay well below 1MB Firestore limit
+ */
+function sanitizeModuleForFirestore(module: LearningModule): LearningModule {
+  return {
+    ...module,
+    pages: (module.pages || []).map((page) => {
+      const sanitizedPage = { ...page };
+      if (sanitizedPage.gameHtml && sanitizedPage.gameHtml.length > 800000) {
+        sanitizedPage.gameHtml = sanitizedPage.gameHtml.slice(0, 800000);
+      }
+      return sanitizedPage;
+    }),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Initialize default module if learning_modules collection is empty
+ */
+export async function initializeModulesIfNeeded(): Promise<void> {
+  try {
+    const snap = await getDocs(collection(db, MODULES_COL));
+    recordQuotaUsage({ reads: snap.size || 1 });
+    if (snap.empty) {
+      const batch = writeBatch(db);
+      for (const mod of DEFAULT_MODULES) {
+        const ref = doc(db, MODULES_COL, mod.id);
+        batch.set(ref, sanitizeModuleForFirestore(mod));
+      }
+      await batch.commit();
+      recordQuotaUsage({ writes: DEFAULT_MODULES.length });
+    }
+  } catch (err) {
+    console.warn('initializeModulesIfNeeded error:', err);
+  }
+}
+
+/**
+ * Subscribe to all learning modules in real-time
+ */
+export function listenToModules(
+  onUpdate: (modules: LearningModule[]) => void,
+  onError?: (error: any) => void
+) {
+  try {
+    const q = query(collection(db, MODULES_COL), orderBy('order', 'asc'));
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        if (!snapshot.metadata.fromCache) {
+          recordQuotaUsage({ reads: snapshot.docChanges().length || 1 });
+        }
+        if (snapshot.empty) {
+          // If empty in DB, auto-seed default module
+          initializeModulesIfNeeded().then(() => {});
+          onUpdate(DEFAULT_MODULES);
+          return;
+        }
+        const list: LearningModule[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push(docSnap.data() as LearningModule);
+        });
+        list.sort((a, b) => (a.order || 0) - (b.order || 0));
+        onUpdate(list);
+      },
+      (error) => {
+        console.warn('listenToModules error:', error);
+        if (onError) onError(error);
+      }
+    );
+  } catch (err) {
+    console.warn('listenToModules failed to subscribe:', err);
+    return () => {};
+  }
+}
+
+/**
+ * Save or update a single learning module
+ */
+export async function saveModuleInDb(module: LearningModule): Promise<void> {
+  const cleanMod = sanitizeModuleForFirestore(module);
+  const ref = doc(db, MODULES_COL, cleanMod.id);
+  await setDoc(ref, cleanMod, { merge: true });
+  recordQuotaUsage({ writes: 1 });
+  await addSystemLog(
+    'SIMPAN_MODUL',
+    `Menyimpan/memperbarui modul: "${cleanMod.title}" (${cleanMod.pages?.length || 0} halaman)`,
+    'GURU_ADMIN'
+  );
+}
+
+/**
+ * Delete a module from DB
+ */
+export async function deleteModuleInDb(moduleId: string, moduleTitle: string): Promise<void> {
+  const ref = doc(db, MODULES_COL, moduleId);
+  await deleteDoc(ref);
+  recordQuotaUsage({ writes: 1 });
+  await addSystemLog(
+    'HAPUS_MODUL',
+    `Menghapus modul: "${moduleTitle}" (${moduleId})`,
+    'GURU_ADMIN'
+  );
+}
+
+/**
+ * Batch update order of modules
+ */
+export async function reorderModulesInDb(modules: LearningModule[]): Promise<void> {
+  const batch = writeBatch(db);
+  modules.forEach((mod, index) => {
+    const ref = doc(db, MODULES_COL, mod.id);
+    batch.update(ref, { order: index + 1, updatedAt: new Date().toISOString() });
+  });
+  await batch.commit();
+  recordQuotaUsage({ writes: modules.length });
+}
+
+/**
+ * Subscribe to a student's progress for all modules (real-time)
+ */
+export function listenToStudentProgress(
+  studentNisn: string,
+  onUpdate: (progressList: StudentModuleProgress[]) => void
+) {
+  try {
+    const q = query(
+      collection(db, MODULE_PROGRESS_COL),
+      where('studentNisn', '==', studentNisn)
+    );
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        if (!snapshot.metadata.fromCache) {
+          recordQuotaUsage({ reads: snapshot.docChanges().length || 1 });
+        }
+        const list: StudentModuleProgress[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push(docSnap.data() as StudentModuleProgress);
+        });
+        onUpdate(list);
+      },
+      (error) => {
+        console.warn('listenToStudentProgress error:', error);
+      }
+    );
+  } catch (err) {
+    console.warn('listenToStudentProgress failed:', err);
+    return () => {};
+  }
+}
+
+/**
+ * Save / Update student module progress
+ */
+export async function saveStudentProgressInDb(progress: StudentModuleProgress): Promise<void> {
+  const docId = `${progress.studentNisn}_${progress.moduleId}`;
+  const ref = doc(db, MODULE_PROGRESS_COL, docId);
+  const data = {
+    ...progress,
+    id: docId,
+    updatedAt: new Date().toISOString(),
+  };
+  await setDoc(ref, data, { merge: true });
+  recordQuotaUsage({ writes: 1 });
+}
+
+/**
+ * Subscribe to all students' module progress (for Admin / Guru Recap)
+ */
+export function listenToAllModuleProgress(
+  onUpdate: (progressList: StudentModuleProgress[]) => void
+) {
+  try {
+    const q = collection(db, MODULE_PROGRESS_COL);
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        if (!snapshot.metadata.fromCache) {
+          recordQuotaUsage({ reads: snapshot.docChanges().length || 1 });
+        }
+        const list: StudentModuleProgress[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push(docSnap.data() as StudentModuleProgress);
+        });
+        onUpdate(list);
+      },
+      (error) => {
+        console.warn('listenToAllModuleProgress error:', error);
+      }
+    );
+  } catch (err) {
+    console.warn('listenToAllModuleProgress failed:', err);
     return () => {};
   }
 }

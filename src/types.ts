@@ -75,3 +75,62 @@ export interface SystemLog {
   timestamp: string;
 }
 
+// ==========================================
+// MATERI MODUL (PORTAL BELAJAR) TYPES
+// ==========================================
+
+export type ModulePageType = 'materi' | 'game' | 'quiz';
+
+export interface QuizQuestion {
+  id: string;
+  question: string;
+  options: string[]; // 4 options [A, B, C, D]
+  correctAnswerIndex: number; // 0, 1, 2, or 3
+}
+
+export interface ModulePage {
+  id: string;
+  title: string;
+  type: ModulePageType;
+  order: number;
+  // Khusus type === 'materi'
+  content?: string; // Rich text / paragraphs / bullet items
+  readingDelaySeconds?: number; // default 10 seconds
+  lockQuestion?: QuizQuestion; // 1 lock question
+  // Khusus type === 'game'
+  gameHtml?: string; // HTML embed code as string
+  // Khusus type === 'quiz' (Kuis Akhir)
+  quizQuestions?: QuizQuestion[];
+  randomizeQuestions?: boolean;
+}
+
+export interface LearningModule {
+  id: string;
+  title: string;
+  order: number;
+  isLockedWithPassword?: boolean;
+  password?: string;
+  pages: ModulePage[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface StudentModuleProgress {
+  id: string; // `${studentNisn}_${moduleId}`
+  studentNisn: string;
+  studentName: string;
+  studentClass?: string;
+  moduleId: string;
+  moduleTitle: string;
+  unlockedWithPassword?: boolean;
+  unlockedPageIds: string[]; // array of completed / unlocked page IDs
+  lastActivePageId?: string;
+  isCompleted?: boolean;
+  quizScore?: number; // Latest quiz score (0 - 100)
+  highestQuizScore?: number; // Highest quiz score (0 - 100)
+  quizCorrectCount?: number;
+  quizTotalCount?: number;
+  lastQuizAttemptAt?: string;
+  updatedAt?: string;
+}
+

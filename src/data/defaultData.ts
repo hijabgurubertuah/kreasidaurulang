@@ -1,4 +1,4 @@
-import { ClassRoom, Student, TeacherCode, EvaluationCriteriaConfig } from '../types';
+import { ClassRoom, Student, TeacherCode, EvaluationCriteriaConfig, LearningModule } from '../types';
 
 export const DEFAULT_CLASSES: ClassRoom[] = [
   {
@@ -114,5 +114,77 @@ export const DEFAULT_TEACHER_CODES: TeacherCode[] = [
     role: 'teacher',
     assignedClass: 'class-7a',
     createdAt: '2026-09-05T09:00:00Z',
+  },
+];
+
+export const DEFAULT_MODULES: LearningModule[] = [
+  {
+    id: 'modul-1',
+    title: 'Modul 1',
+    order: 1,
+    isLockedWithPassword: false,
+    pages: [
+      {
+        id: 'page-1',
+        title: 'Halaman 1',
+        type: 'materi',
+        order: 1,
+        content: `Selamat datang di pembelajaran Modul Kreasi Daur Ulang SMP Negeri 1 Bengkalis!
+
+Daur ulang adalah proses pengolahan kembali barang-barang bekas atau sampah yang sudah tidak terpakai menjadi barang baru yang bermanfaat dan memiliki nilai guna. Dengan mendaur ulang sampah anorganik seperti botol plastik, kardus, dan kaleng, kita ikut menyelamatkan lingkungan dari pencemaran serta melatih daya kreativitas kita.
+
+Prinsip utama pengelolaan sampah yang bijak dikenal dengan 3R:
+1. Reduce (Mengurangi timbulan sampah)
+2. Reuse (Menggunakan kembali barang yang masih layak)
+3. Recycle (Mendaur ulang sampah menjadi produk baru)
+
+Mari kita jaga kebersihan lingkungan sekolah dan rumah dengan bijak memilah sampah!`,
+        readingDelaySeconds: 10,
+        lockQuestion: {
+          id: 'q-lock-1',
+          question: 'Apa kepanjangan dari prinsip 3R dalam pengelolaan sampah?',
+          options: [
+            'Reduce, Reuse, Recycle',
+            'Remove, Replace, Repair',
+            'Refresh, Restart, Return',
+            'React, Respond, Recover',
+          ],
+          correctAnswerIndex: 0,
+        },
+      },
+      {
+        id: 'page-quiz',
+        title: 'Kuis Akhir',
+        type: 'quiz',
+        order: 2,
+        randomizeQuestions: true,
+        quizQuestions: [
+          {
+            id: 'q-final-1',
+            question: 'Manakah dari berikut ini yang termasuk contoh sampah anorganik yang dapat didaur ulang?',
+            options: [
+              'Sisa daun kering dan ranting pohon',
+              'Botol plastik dan kaleng minuman bekas',
+              'Sisa makanan dan kulit buah',
+              'Kotoran ternak dan kompos',
+            ],
+            correctAnswerIndex: 1,
+          },
+          {
+            id: 'q-final-2',
+            question: 'Prinsip menggunakan kembali barang yang masih dapat dimanfaatkan tanpa melalui proses pengolahan ulang disebut...',
+            options: [
+              'Recycle',
+              'Reduce',
+              'Reuse',
+              'Replace',
+            ],
+            correctAnswerIndex: 2,
+          },
+        ],
+      },
+    ],
+    createdAt: '2026-10-01T08:00:00Z',
+    updatedAt: '2026-10-01T08:00:00Z',
   },
 ];

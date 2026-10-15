@@ -39,7 +39,9 @@ import {
   GripVertical,
   ChevronUp,
   ChevronDown,
+  BookOpen,
 } from 'lucide-react';
+import { ModuleManagement } from './ModuleManagement';
 import {
   ClassRoom,
   Student,
@@ -130,7 +132,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   isSavingToFirebase = false,
   onDiscardPendingChanges,
 }) => {
-  const [activeTab, setActiveTab] = useState<'students' | 'scores' | 'teachers' | 'database' | 'schedule' | 'criteria'>('students');
+  const [activeTab, setActiveTab] = useState<'students' | 'scores' | 'teachers' | 'database' | 'schedule' | 'criteria' | 'modules'>('students');
 
   // Reset Scores States (Jadwal tab)
   const [isResettingScores, setIsResettingScores] = useState(false);
@@ -1179,8 +1181,8 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         </div>
       )}
 
-      {/* Tab Navigation - 6 Kolom Proporsional */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 bg-slate-200/80 p-1 rounded-2xl gap-1">
+      {/* Tab Navigation - Responsif Mobile-First */}
+      <div className="grid grid-cols-3 sm:grid-cols-7 bg-slate-200/80 p-1 rounded-2xl gap-1">
         <button
           type="button"
           onClick={() => {
@@ -1195,6 +1197,22 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         >
           <GraduationCap className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
           <span className="truncate ml-1">SISWA</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('modules');
+            setErrorMessage('');
+          }}
+          className={`flex items-center justify-center space-x-1 py-1.5 px-0.5 rounded-xl text-xs font-bold transition-all cursor-pointer truncate ${
+            activeTab === 'modules'
+              ? 'bg-white text-emerald-800 shadow-xs ring-1 ring-emerald-500/30'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <BookOpen className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+          <span className="truncate ml-1">MODUL</span>
         </button>
 
         <button
@@ -2723,6 +2741,13 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* TAB 7: KELOLA MODUL PEMBELAJARAN (SISI GURU / ADMIN) */}
+      {activeTab === 'modules' && (
+        <div className="space-y-4">
+          <ModuleManagement students={students} />
         </div>
       )}
 
