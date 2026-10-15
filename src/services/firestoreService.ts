@@ -1438,6 +1438,37 @@ export async function reorderModulesInDb(modules: LearningModule[]): Promise<voi
 }
 
 /**
+ * Batch save all modules and delete removed modules in one atomic operation
+ */
+export async function saveAllModulesInDb(
+  modules: LearningModule[],
+  deletedIds: string[] = []
+): Promise<void> {
+  const batch = writeBatch(db);
+  for (const delId of deletedIds) {
+    const ref = doc(db, MODULES_COL, delId);
+    batch.delete(ref);
+  }
+  for (let i = 0; i < modules.length; i++) {
+    const mod = modules[i];
+    const cleanMod = sanitizeModuleForFirestore({
+      ...mod,
+      order: i + 1,
+      updatedAt: new Date().toISOString(),
+    });
+    const ref = doc(db, MODULES_COL, cleanMod.id);
+    batch.set(ref, cleanMod, { merge: true });
+  }
+  await batch.commit();
+  recordQuotaUsage({ writes: modules.length + deletedIds.length });
+  await addSystemLog(
+    'SIMPAN_SEMUA_MODUL',
+    `Menyimpan seluruh pengaturan modul ke Firebase (${modules.length} modul tersimpan, ${deletedIds.length} dihapus)`,
+    'GURU_ADMIN'
+  );
+}
+
+/**
  * Subscribe to a student's progress for all modules (real-time)
  */
 export function listenToStudentProgress(

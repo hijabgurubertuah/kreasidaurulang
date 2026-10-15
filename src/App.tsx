@@ -98,6 +98,7 @@ export default function App() {
   const [adminModalTab, setAdminModalTab] = useState<'csv' | 'codes'>('csv');
   const [firebaseConnected, setFirebaseConnected] = useState(false);
   const [saveSuccessNotification, setSaveSuccessNotification] = useState<string | null>(null);
+  const [adminPortalTab, setAdminPortalTab] = useState<string>('students');
 
   // Sync currentUser changes to localStorage
   useEffect(() => {
@@ -634,10 +635,14 @@ export default function App() {
     setIsAdminModalOpen(true);
   };
 
+  const isModuleFullScreen =
+    (activePage === 'admin-portal' && adminPortalTab === 'modules') ||
+    activePage === 'student-view';
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-emerald-200 selection:text-emerald-900">
-      {/* Top Navigation - Hanya tampil setelah login (untuk admin selalu tampil termasuk saat melihat tampilan siswa) */}
-      {activePage !== 'login' && (currentUser?.role === 'admin' || activePage !== 'student-view') && (
+      {/* Top Navigation - Tidak tampil saat halaman modul (admin atau siswa) agar full screen tanpa menu/bar lain */}
+      {activePage !== 'login' && !isModuleFullScreen && (
         <Navbar
           currentUser={currentUser}
           activePage={activePage}
@@ -677,7 +682,7 @@ export default function App() {
 
         {/* Portal Admin (Atur NISN, Kode Guru, CSV & Database 1 GB) */}
         {activePage === 'admin-portal' && currentUser && currentUser.role === 'admin' && (
-          <div className="pb-16 flex-1">
+          <div className={adminPortalTab === 'modules' ? 'flex-1' : 'pb-16 flex-1'}>
             <AdminPortalView
               students={students}
               classes={classes}
@@ -699,6 +704,7 @@ export default function App() {
               onDeduplicateStudents={handleDeduplicateStudents}
               onResetStudentScores={handleResetStudentScores}
               firebaseConnected={firebaseConnected}
+              onActiveTabChange={(tab) => setAdminPortalTab(tab)}
             />
           </div>
         )}

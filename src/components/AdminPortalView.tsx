@@ -104,6 +104,7 @@ interface AdminPortalViewProps {
   onSaveToFirebase?: () => Promise<void>;
   isSavingToFirebase?: boolean;
   onDiscardPendingChanges?: () => void;
+  onActiveTabChange?: (tab: 'students' | 'scores' | 'teachers' | 'database' | 'schedule' | 'criteria' | 'modules') => void;
 }
 
 export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
@@ -132,8 +133,14 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   onSaveToFirebase,
   isSavingToFirebase = false,
   onDiscardPendingChanges,
+  onActiveTabChange,
 }) => {
-  const [activeTab, setActiveTab] = useState<'students' | 'scores' | 'teachers' | 'database' | 'schedule' | 'criteria' | 'modules'>('students');
+  const [activeTab, setActiveTabInternal] = useState<'students' | 'scores' | 'teachers' | 'database' | 'schedule' | 'criteria' | 'modules'>('students');
+
+  const setActiveTab = (tab: 'students' | 'scores' | 'teachers' | 'database' | 'schedule' | 'criteria' | 'modules') => {
+    setActiveTabInternal(tab);
+    onActiveTabChange?.(tab);
+  };
 
   // Reset Scores States (Jadwal tab)
   const [isResettingScores, setIsResettingScores] = useState(false);
@@ -1099,41 +1106,13 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     createdAt: '2026-09-01T08:00:00Z',
   };
 
-  // JIKA MEMILIH TAB MODUL: TAMPILKAN HALAMAN FULL PENGATURAN MODUL TANPA MENU LAIN & TANPA BAR LAIN
+  // JIKA MEMILIH TAB MODUL: MENUJU HALAMAN FULL PENGATURAN MODUL TANPA MENU LAIN & TANPA BAR LAIN
   if (activeTab === 'modules') {
     return (
-      <div className="w-full max-w-5xl mx-auto px-3 sm:px-6 py-4 space-y-4 animate-fadeIn">
-        {/* Top Header Khusus Modul: Bersih tanpa menu lain, dengan tombol Kembali ke Menu Admin */}
-        <div className="bg-slate-900 text-white p-3.5 sm:p-4 rounded-2xl shadow-md border border-slate-800 flex items-center justify-between gap-3">
-          <div className="flex items-center space-x-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
-              <BookOpen className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
-              <h2 className="text-xs sm:text-sm font-black text-white uppercase tracking-wider truncate">
-                PENGATURAN MODUL PEMBELAJARAN
-              </h2>
-              <p className="text-[10px] text-emerald-300 font-semibold truncate">
-                Kelola materi, halaman, video, kuis & password modul siswa
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('students')}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white rounded-xl text-xs font-bold border border-slate-700 transition-all cursor-pointer shrink-0 active:scale-95"
-            title="Kembali ke Menu Admin Lainnya (Siswa, Nilai, Guru, Jadwal)"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Kembali ke Menu Admin</span>
-            <span className="sm:hidden">Kembali</span>
-          </button>
-        </div>
-
-        {/* Full Pengaturan Modul */}
-        <ModuleManagement students={students} />
-      </div>
+      <ModuleManagement
+        students={students}
+        onBackToAdminPortal={() => setActiveTab('students')}
+      />
     );
   }
 

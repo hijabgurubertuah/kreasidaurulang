@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { LogOut, Award, BookOpen, Calendar } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { LogOut, Award, BookOpen, Calendar, ChevronRight, X } from 'lucide-react';
 import { Student, MeetingSchedule } from '../types';
 import { isMeetingOpened, formatIndonesianDate } from '../utils/scheduleHelper';
 import { StudentModuleLearningView } from './StudentModuleLearningView';
@@ -176,6 +177,7 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
   onLogout,
 }) => {
   const [activeTab, setActiveTab] = useState<'sikap' | 'modul'>('modul');
+  const [isSikapSidebarOpen, setIsSikapSidebarOpen] = useState(false);
 
   // Calculate average score based strictly on OPENED meetings (activeDate <= today)
   const meetingScores = student.meetingScores || [];
@@ -206,49 +208,17 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
     : 'Penilaian kokurikuler belum dimulai. Pantau jadwal pertemuan untuk melihat hasil penilaian sikap.';
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-3 sm:px-6 py-4 space-y-4 animate-fadeIn">
-      {/* TAB NAVIGASI UTAMA SISWA (PENILAIAN SIKAP & MATERI MODUL) */}
-      <div className="flex items-center justify-between bg-white p-1.5 rounded-2xl border border-slate-200 shadow-xs gap-1.5">
-        <button
-          type="button"
-          onClick={() => setActiveTab('modul')}
-          className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center justify-center space-x-2 ${
-            activeTab === 'modul'
-              ? 'bg-emerald-600 text-white shadow-xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
-        >
-          <BookOpen className="w-4 h-4 shrink-0" />
-          <span>Materi Modul</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('sikap')}
-          className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center justify-center space-x-2 ${
-            activeTab === 'sikap'
-              ? 'bg-emerald-600 text-white shadow-xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
-        >
-          <Calendar className="w-4 h-4 shrink-0" />
-          <span>Penilaian Sikap (20 Pertemuan)</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={onLogout}
-          className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer shrink-0"
-          title="Keluar / Ganti Akun"
-        >
-          <LogOut className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* KONTEN TAB: MATERI MODUL */}
-      {activeTab === 'modul' && (
-        <StudentModuleLearningView student={student} />
-      )}
+    <div className="min-h-screen bg-gradient-to-b from-[#063327] via-[#094233] to-[#041c16] text-slate-100 py-4 px-3 sm:px-6 animate-fadeIn">
+      <div className="w-full max-w-5xl mx-auto space-y-4">
+        {/* KONTEN TAB: MATERI MODUL */}
+        {activeTab === 'modul' && (
+          <StudentModuleLearningView
+            student={student}
+            currentTab={activeTab}
+            onSwitchTab={setActiveTab}
+            onLogout={onLogout}
+          />
+        )}
 
       {/* KONTEN TAB: PENILAIAN SIKAP (FITUR LAMA TETAP TERJAGA 100%) */}
       {activeTab === 'sikap' && (
@@ -374,6 +344,121 @@ export const StudentPortalView: React.FC<StudentPortalViewProps> = ({
           )}
         </div>
       )}
+
+      {/* JIKA DI TAB SIKAP, SEDIAKAN TOMBOL PEMICU SIDEBAR AGAR SISWA BISA KEMBALI KE MATERI MODUL / KELUAR */}
+      {activeTab === 'sikap' && !isSikapSidebarOpen && typeof document !== 'undefined' &&
+        createPortal(
+          <button
+            type="button"
+            onClick={() => setIsSikapSidebarOpen(true)}
+            title="Buka Menu Navigasi"
+            aria-label="Buka Menu Navigasi"
+            className="fixed left-0 top-1/2 -translate-y-1/2 z-[9990] w-[30px] h-[120px] bg-gradient-to-b from-teal-600 via-teal-700 to-emerald-800 hover:from-teal-500 hover:to-teal-600 text-white rounded-r-2xl shadow-2xl shadow-teal-950/50 flex flex-col items-center justify-between py-2.5 cursor-pointer border-r-2 border-y border-teal-300/50 active:scale-95 transition-all group select-none pointer-events-auto"
+            style={{ position: 'fixed', left: 0, top: '50%', transform: 'translateY(-50%)', zIndex: 9990 }}
+          >
+            <BookOpen className="w-4 h-4 text-teal-200 group-hover:scale-110 transition-transform shrink-0" />
+            <div className="flex flex-col items-center justify-center text-[10px] font-black tracking-tighter leading-[1.1] text-teal-100 select-none pointer-events-none">
+              <span>M</span>
+              <span>E</span>
+              <span>N</span>
+              <span>U</span>
+            </div>
+            <ChevronRight className="w-3.5 h-3.5 text-teal-300 animate-pulse shrink-0" />
+          </button>,
+          document.body
+        )}
+
+      {/* DRAWER SIDEBAR TOSKA SAAT DI TAB SIKAP */}
+      {activeTab === 'sikap' && isSikapSidebarOpen && typeof document !== 'undefined' &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex" style={{ position: 'fixed', inset: 0, zIndex: 9999 }}>
+            <div
+              className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity cursor-pointer"
+              style={{ position: 'fixed', inset: 0 }}
+              onClick={() => setIsSikapSidebarOpen(false)}
+            />
+            <div className="relative w-80 max-w-[85vw] bg-gradient-to-b from-[#0b3838] via-[#082e2f] to-[#041a1b] text-teal-50 h-full shadow-2xl p-4 flex flex-col z-10 animate-slideRight border-r border-teal-500/30">
+              <div className="flex items-center justify-between pb-3.5 border-b border-teal-500/20">
+                <div className="flex items-center space-x-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-teal-900/90 border border-teal-400/40 p-1 flex items-center justify-center shrink-0 shadow-inner">
+                    <img
+                      src="https://i.ibb.co.com/nqfqhc29/kdu.png"
+                      alt="Logo KDU"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-black text-xs text-white leading-tight truncate">
+                      SMP Negeri 1 Bengkalis
+                    </h3>
+                    <span className="text-[10px] text-teal-300 font-semibold block truncate">
+                      Portal Siswa
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSikapSidebarOpen(false)}
+                  className="p-1.5 rounded-lg text-teal-300 hover:text-white hover:bg-teal-800/50 cursor-pointer transition-colors shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-1.5 py-3 border-b border-teal-500/20">
+                <span className="text-[10px] uppercase font-black text-teal-400 tracking-wider px-1">
+                  Menu Utama
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('modul');
+                    setIsSikapSidebarOpen(false);
+                  }}
+                  className="w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-xs font-black text-teal-100 hover:text-white hover:bg-teal-800/50 transition-all cursor-pointer"
+                >
+                  <BookOpen className="w-4 h-4 shrink-0" />
+                  <span>Materi Modul</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('sikap');
+                    setIsSikapSidebarOpen(false);
+                  }}
+                  className="w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-xs font-black bg-teal-500 text-slate-950 shadow-md shadow-teal-500/30 transition-all cursor-pointer"
+                >
+                  <Calendar className="w-4 h-4 shrink-0" />
+                  <span>Penilaian Sikap (20 Pertemuan)</span>
+                </button>
+
+                {onLogout && (
+                  <button
+                    type="button"
+                    onClick={onLogout}
+                    className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-300 hover:text-rose-100 hover:bg-rose-950/40 transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4 shrink-0" />
+                    <span>Keluar Akun</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="mt-auto pt-3 border-t border-teal-500/20">
+                <div className="p-2.5 bg-teal-950/80 rounded-xl border border-teal-500/30 text-xs">
+                  <span className="text-[9px] uppercase font-black text-teal-400 block tracking-wider">
+                    Siswa Aktif
+                  </span>
+                  <p className="font-bold text-white truncate">{student.name}</p>
+                  <p className="text-[10px] text-teal-300">NISN: {student.nisn} ({student.className})</p>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+      </div>
     </div>
   );
 };

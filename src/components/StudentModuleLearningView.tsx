@@ -33,14 +33,22 @@ import {
   KeyRound,
   Maximize2,
   Check,
+  Calendar,
+  LogOut,
 } from 'lucide-react';
 
 interface StudentModuleLearningViewProps {
   student: Student;
+  currentTab?: 'modul' | 'sikap';
+  onSwitchTab?: (tab: 'modul' | 'sikap') => void;
+  onLogout?: () => void;
 }
 
 export const StudentModuleLearningView: React.FC<StudentModuleLearningViewProps> = ({
   student,
+  currentTab = 'modul',
+  onSwitchTab,
+  onLogout,
 }) => {
   const [modules, setModules] = useState<LearningModule[]>([]);
   const [progressList, setProgressList] = useState<StudentModuleProgress[]>([]);
@@ -411,20 +419,20 @@ export const StudentModuleLearningView: React.FC<StudentModuleLearningViewProps>
           <button
             type="button"
             onClick={() => setIsSidebarOpen(true)}
-            title="Buka Daftar Modul (Pindah Modul)"
-            aria-label="Buka Daftar Modul"
-            className="fixed left-0 top-1/2 -translate-y-1/2 z-[9990] w-[30px] h-[120px] bg-gradient-to-b from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white rounded-r-2xl shadow-2xl shadow-emerald-950/40 flex flex-col items-center justify-between py-2.5 cursor-pointer border-r-2 border-y border-emerald-300/50 active:scale-95 transition-all group select-none pointer-events-auto"
+            title="Buka Menu Modul & Navigasi"
+            aria-label="Buka Menu Modul"
+            className="fixed left-0 top-1/2 -translate-y-1/2 z-[9990] w-[30px] h-[120px] bg-gradient-to-b from-teal-600 via-teal-700 to-emerald-800 hover:from-teal-500 hover:to-teal-600 text-white rounded-r-2xl shadow-2xl shadow-teal-950/50 flex flex-col items-center justify-between py-2.5 cursor-pointer border-r-2 border-y border-teal-300/50 active:scale-95 transition-all group select-none pointer-events-auto"
             style={{ position: 'fixed', left: 0, top: '50%', transform: 'translateY(-50%)', zIndex: 9990 }}
           >
-            <BookOpen className="w-4 h-4 text-emerald-200 group-hover:scale-110 transition-transform shrink-0" />
-            <div className="flex flex-col items-center justify-center text-[10px] font-black tracking-tighter leading-[1.1] text-emerald-100 select-none pointer-events-none">
+            <BookOpen className="w-4 h-4 text-teal-200 group-hover:scale-110 transition-transform shrink-0" />
+            <div className="flex flex-col items-center justify-center text-[10px] font-black tracking-tighter leading-[1.1] text-teal-100 select-none pointer-events-none">
               <span>M</span>
               <span>O</span>
               <span>D</span>
               <span>U</span>
               <span>L</span>
             </div>
-            <ChevronRight className="w-3.5 h-3.5 text-emerald-300 animate-pulse shrink-0" />
+            <ChevronRight className="w-3.5 h-3.5 text-teal-300 animate-pulse shrink-0" />
           </button>,
           document.body
         )}
@@ -479,52 +487,14 @@ export const StudentModuleLearningView: React.FC<StudentModuleLearningViewProps>
           </div>
         </div>
       ) : activeModule && activePage ? (
-        /* 2. TAMPILAN DALAM MODUL (HANYA MATERI SESUAI PERMINTAAN USER) */
+        /* 2. TAMPILAN DALAM MODUL: PALING ATAS LANGSUNG TAB-TAB MATERI */
         <div className="space-y-3">
-          {/* Top Bar Ringkas Navigasi Modul */}
-          <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200/90 shadow-xs flex items-center justify-between gap-2">
-            <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
-              <button
-                type="button"
-                onClick={() => setIsSidebarOpen(true)}
-                className="p-2 sm:px-3 sm:py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-xl border border-emerald-200 flex items-center space-x-1.5 cursor-pointer shrink-0"
-                title="Buka Daftar Modul (Pindah Modul)"
-              >
-                <BookOpen className="w-4 h-4 text-emerald-700" />
-                <span>Pindah Modul</span>
-              </button>
-
-              <div className="min-w-0">
-                <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider text-emerald-700 block truncate">
-                  Portal Belajar Daring SMP Negeri 1 Bengkalis
-                </span>
-                <h2 className="text-sm sm:text-base font-black text-slate-900 truncate">
-                  {activeModule.title}
-                </h2>
-              </div>
-            </div>
-
-            {/* Status Modul & Nilai */}
-            <div className="flex items-center space-x-2 shrink-0">
-              {currentProgress?.isCompleted && (
-                <div className="hidden sm:flex items-center space-x-1 px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-black">
-                  <Award className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Nilai Kuis: {currentProgress.quizScore ?? '-'}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* TAB HALAMAN BERJEJER RAPI (SCROLLABLE DI HP) */}
-          <div className="bg-white p-2 rounded-2xl border border-slate-200/90 shadow-xs overflow-x-auto scrollbar-none">
-            <div className="flex items-center space-x-1.5 min-w-max">
+          {/* TAB HALAMAN MATERI (MODERN GLASSMORPHISM & MINIMALIS, TIDAK KELUAR DARI HP) */}
+          <div className="w-full max-w-full overflow-hidden bg-white/10 backdrop-blur-xl border border-white/20 shadow-xl shadow-emerald-950/20 rounded-2xl p-1.5 sm:p-2">
+            <div className="flex items-center space-x-2 overflow-x-auto scrollbar-none max-w-full py-1 px-1 scroll-smooth">
               {activeModule.pages.map((p, idx) => {
                 const unlocked = isPageUnlocked(p, idx);
                 const isActive = activePageIndex === idx;
-
-                let Icon = FileText;
-                if (p.type === 'game') Icon = Gamepad2;
-                if (p.type === 'quiz') Icon = HelpCircle;
 
                 return (
                   <button
@@ -534,20 +504,26 @@ export const StudentModuleLearningView: React.FC<StudentModuleLearningViewProps>
                     onClick={() => {
                       if (unlocked) setActivePageIndex(idx);
                     }}
-                    className={`flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border ${
+                    title={p.title}
+                    className={`flex items-center justify-center rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer shrink-0 border select-none ${
                       isActive
-                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs scale-102'
+                        ? 'min-w-[56px] sm:min-w-[68px] h-10 px-3.5 bg-white text-emerald-950 border-white shadow-xl shadow-black/25 ring-2 ring-emerald-300 scale-105 space-x-1.5'
                         : unlocked
-                        ? 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-emerald-50 hover:text-emerald-800'
-                        : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60 cursor-not-allowed'
+                        ? 'w-10 h-10 bg-white/15 hover:bg-white/25 text-white border-white/20 hover:border-white/40 active:scale-95'
+                        : 'w-10 h-10 bg-black/25 text-white/30 border-white/10 opacity-50 cursor-not-allowed'
                     }`}
                   >
                     {!unlocked ? (
-                      <Lock className="w-3.5 h-3.5 text-slate-400" />
+                      <Lock className="w-3.5 h-3.5 text-white/40" />
+                    ) : isActive ? (
+                      <>
+                        <span>{idx + 1}</span>
+                        {p.type === 'game' && <Gamepad2 className="w-3.5 h-3.5 text-purple-700 shrink-0" />}
+                        {p.type === 'quiz' && <Award className="w-3.5 h-3.5 text-amber-600 shrink-0" />}
+                      </>
                     ) : (
-                      <Icon className="w-3.5 h-3.5" />
+                      <span>{idx + 1}</span>
                     )}
-                    <span>{p.title}</span>
                   </button>
                 );
               })}
@@ -921,36 +897,97 @@ export const StudentModuleLearningView: React.FC<StudentModuleLearningViewProps>
               onClick={() => setIsSidebarOpen(false)}
             />
 
-            {/* Drawer Container */}
-            <div className="relative w-80 max-w-[85vw] bg-white h-full shadow-2xl p-4 flex flex-col z-10 animate-slideRight">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-                <div className="flex items-center space-x-2">
-                  <BookOpen className="w-5 h-5 text-emerald-600" />
-                  <div>
-                    <h3 className="font-black text-sm text-slate-900 leading-tight">Daftar Modul Belajar</h3>
-                    <span className="text-[10px] text-slate-500 font-semibold block">SMP Negeri 1 Bengkalis</span>
+            {/* Drawer Container - MODERN TOSKA */}
+            <div className="relative w-80 max-w-[85vw] bg-gradient-to-b from-[#0b3838] via-[#082e2f] to-[#041a1b] text-teal-50 h-full shadow-2xl p-4 flex flex-col z-10 animate-slideRight border-r border-teal-500/30">
+              {/* Header Sidebar: Logo Aplikasi Kecil Saja */}
+              <div className="flex items-center justify-between pb-3.5 border-b border-teal-500/20">
+                <div className="flex items-center space-x-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-teal-900/90 border border-teal-400/40 p-1 flex items-center justify-center shrink-0 shadow-inner">
+                    <img
+                      src="https://i.ibb.co.com/nqfqhc29/kdu.png"
+                      alt="Logo KDU"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-black text-xs text-white leading-tight truncate">
+                      SMP Negeri 1 Bengkalis
+                    </h3>
+                    <span className="text-[10px] text-teal-300 font-semibold block truncate">
+                      Portal Siswa
+                    </span>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsSidebarOpen(false)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                  className="p-1.5 rounded-lg text-teal-300 hover:text-white hover:bg-teal-800/50 cursor-pointer transition-colors shrink-0"
                   title="Tutup Menu"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* Profil Siswa Singkat */}
-              <div className="my-2 p-2.5 bg-emerald-50 rounded-xl border border-emerald-200/70 text-xs">
-                <span className="text-[10px] uppercase font-black text-emerald-700 block tracking-wider">
-                  Portal Belajar Siswa
+              {/* Menu Navigasi Siswa */}
+              <div className="space-y-1.5 py-3 border-b border-teal-500/20">
+                <span className="text-[10px] uppercase font-black text-teal-400 tracking-wider px-1">
+                  Menu Utama
                 </span>
-                <p className="font-bold text-slate-900 truncate">{student.name}</p>
-                <p className="text-[11px] text-emerald-800">NISN: {student.nisn} ({student.className})</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSwitchTab?.('modul');
+                    setIsSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                    currentTab === 'modul'
+                      ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/30'
+                      : 'text-teal-100 hover:text-white hover:bg-teal-800/50'
+                  }`}
+                >
+                  <BookOpen className="w-4 h-4 shrink-0" />
+                  <span>Materi Modul</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSwitchTab?.('sikap');
+                    setIsSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                    currentTab === 'sikap'
+                      ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/30'
+                      : 'text-teal-100 hover:text-white hover:bg-teal-800/50'
+                  }`}
+                >
+                  <Calendar className="w-4 h-4 shrink-0" />
+                  <span>Penilaian Sikap (20 Pertemuan)</span>
+                </button>
+
+                {onLogout && (
+                  <button
+                    type="button"
+                    onClick={onLogout}
+                    className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-300 hover:text-rose-100 hover:bg-rose-950/40 transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4 shrink-0" />
+                    <span>Keluar Akun</span>
+                  </button>
+                )}
               </div>
 
-              <div className="flex-1 overflow-y-auto py-2 space-y-2">
+              {/* Daftar Modul Belajar */}
+              <div className="flex items-center justify-between pt-3 pb-1.5 px-1">
+                <span className="text-[10px] uppercase font-black text-teal-400 tracking-wider">
+                  Daftar Modul Belajar
+                </span>
+                <span className="text-[10px] font-bold text-teal-300/80">
+                  {modules.length} Modul
+                </span>
+              </div>
+
+              <div className="flex-1 overflow-y-auto py-1 space-y-2">
                 {modules.map((m, idx) => {
                   const status = getModuleStatus(m);
                   const isSelected = selectedModuleId === m.id;
@@ -961,15 +998,18 @@ export const StudentModuleLearningView: React.FC<StudentModuleLearningViewProps>
                     <button
                       key={m.id}
                       type="button"
-                      onClick={() => handleSelectModule(m)}
+                      onClick={() => {
+                        handleSelectModule(m);
+                        if (onSwitchTab) onSwitchTab('modul');
+                      }}
                       className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer flex flex-col space-y-1.5 ${
                         isSelected
-                          ? 'bg-emerald-50/90 border-emerald-500 shadow-xs ring-1 ring-emerald-500'
-                          : 'bg-white border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                          ? 'bg-teal-700/80 border-teal-300 text-white shadow-lg shadow-teal-950/40 ring-1 ring-teal-300'
+                          : 'bg-teal-950/50 hover:bg-teal-900/60 border-teal-500/25 text-teal-100'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black text-slate-900 truncate">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <span className="text-xs font-black truncate">
                           {idx + 1}. {m.title}
                         </span>
                         <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border flex items-center space-x-1 shrink-0 ${status.color}`}>
@@ -978,10 +1018,10 @@ export const StudentModuleLearningView: React.FC<StudentModuleLearningViewProps>
                         </span>
                       </div>
 
-                      <div className="flex items-center justify-between text-[10px] text-slate-500">
+                      <div className="flex items-center justify-between text-[10px] text-teal-300/80">
                         <span>{m.pages?.length || 0} halaman materi</span>
                         {prog?.isCompleted && (
-                          <span className="font-bold text-emerald-700">
+                          <span className="font-bold text-emerald-300">
                             Nilai: {prog.quizScore ?? '-'}
                           </span>
                         )}
@@ -989,6 +1029,17 @@ export const StudentModuleLearningView: React.FC<StudentModuleLearningViewProps>
                     </button>
                   );
                 })}
+              </div>
+
+              {/* Profil Siswa Singkat */}
+              <div className="mt-auto pt-3 border-t border-teal-500/20">
+                <div className="p-2.5 bg-teal-950/80 rounded-xl border border-teal-500/30 text-xs">
+                  <span className="text-[9px] uppercase font-black text-teal-400 block tracking-wider">
+                    Siswa Aktif
+                  </span>
+                  <p className="font-bold text-white truncate">{student.name}</p>
+                  <p className="text-[10px] text-teal-300">NISN: {student.nisn} ({student.className})</p>
+                </div>
               </div>
             </div>
           </div>,
