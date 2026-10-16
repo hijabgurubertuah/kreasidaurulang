@@ -902,6 +902,37 @@ export async function getSpreadsheetUrlFromDb(): Promise<string> {
   return '';
 }
 
+const APPS_SCRIPT_DOC = 'apps_script_config';
+
+/**
+ * Save Google Apps Script Web App URL in Firestore (Tanpa Login / Anyone)
+ */
+export async function saveAppsScriptUrlInDb(url: string): Promise<void> {
+  try {
+    const ref = doc(db, SETTINGS_COL, APPS_SCRIPT_DOC);
+    await setDoc(ref, { url, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (err) {
+    console.warn('Failed to save Apps Script URL to Firestore:', err);
+  }
+}
+
+/**
+ * Get Google Apps Script Web App URL from Firestore
+ */
+export async function getAppsScriptUrlFromDb(): Promise<string> {
+  try {
+    const ref = doc(db, SETTINGS_COL, APPS_SCRIPT_DOC);
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      return snap.data()?.url || '';
+    }
+  } catch (err) {
+    console.warn('Failed to get Apps Script URL from Firestore:', err);
+  }
+  return '';
+}
+
+
 /**
  * Delete Google Sheets URL from Firestore
  */

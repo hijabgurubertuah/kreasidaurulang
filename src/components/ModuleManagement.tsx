@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { RichTextEditor } from './RichTextEditor';
+import { AutoResizeTextarea } from './AutoResizeTextarea';
+import { KontenDokumen } from './KontenDokumen';
+import { useToast } from './ToastProvider';
 import {
   LearningModule,
   ModulePage,
@@ -39,6 +43,19 @@ import {
   ArrowLeft,
   Home,
   Award,
+  Bold,
+  Italic,
+  Underline,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
+  List,
+  ListOrdered,
+  Palette,
+  Type,
+  Image as ImageIcon,
+  Video as VideoIcon,
 } from 'lucide-react';
 
 interface ModuleManagementProps {
@@ -50,6 +67,7 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
   students = [],
   onBackToAdminPortal,
 }) => {
+  const { tampilToast } = useToast();
   const [subTab, setSubTab] = useState<'modules' | 'scores'>('modules');
   const [modules, setModules] = useState<LearningModule[]>([]);
   const [allProgress, setAllProgress] = useState<StudentModuleProgress[]>([]);
@@ -66,6 +84,7 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null);
   const [activePageIndex, setActivePageIndex] = useState<number>(0);
   const [addPageDropdownOpen, setAddPageDropdownOpen] = useState(false);
+  const [renamingModuleId, setRenamingModuleId] = useState<string | null>(null);
 
   // Delete Confirm Modal
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -156,6 +175,23 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
       setPendingDeletedModuleIds([]);
       setHasUnsavedChanges(false);
       setSaveSuccessMsg('Semua pengaturan modul berhasil disimpan ke Firebase!');
+      tampilToast('Tersimpan', 'success');
+    } catch (err) {
+      console.error(err);
+      setErrorMsg('Gagal menyimpan ke Firebase. Cek koneksi Anda.');
+      tampilToast('Gagal simpan', 'error');
+    } finally {
+      setIsSavingToFirebase(false);
+    }
+  };
+
+  const handleSaveSingleModuleToFirebase = async (mod: LearningModule) => {
+    setIsSavingToFirebase(true);
+    try {
+      await saveAllModulesInDb(modules, pendingDeletedModuleIds);
+      setPendingDeletedModuleIds([]);
+      setHasUnsavedChanges(false);
+      setSaveSuccessMsg(`Modul "${mod.title}" berhasil disimpan ke Firebase!`);
     } catch (err) {
       console.error(err);
       setErrorMsg('Gagal menyimpan ke Firebase. Cek koneksi Anda.');
@@ -290,6 +326,7 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
     };
 
     setEditingPage({ isNew: true, page: newPage });
+    tampilToast('Halaman dibuat', 'success');
   };
 
   const handleSavePageModal = () => {
@@ -346,7 +383,7 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
     setDeleteConfirm(null);
     setHasUnsavedChanges(true);
     setActivePageIndex((prev) => Math.max(0, Math.min(prev, updatedPages.length - 1)));
-    setSaveSuccessMsg('Halaman dihapus. Tekan "Simpan ke Firebase" untuk menyimpan permanen.');
+    tampilToast('Terhapus', 'success');
   };
 
   const handleMovePage = (index: number, direction: 'up' | 'down') => {
@@ -620,7 +657,7 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
             ) : activeModule && (
               <>
                 {/* 1. PALING ATAS LANGSUNG TAB-TAB MATERI (GLASSMORPHISM & MINIMALIS, TIDAK KELUAR DARI HP) */}
-                <div className="w-full max-w-full overflow-hidden bg-white/10 backdrop-blur-xl border border-white/20 shadow-xl shadow-emerald-950/25 rounded-2xl p-1.5 sm:p-2 flex items-center justify-between gap-2">
+                <div className="w-full max-w-full bg-white/10 backdrop-blur-xl border border-white/20 shadow-xl shadow-emerald-950/25 rounded-2xl p-1.5 sm:p-2 flex items-center justify-between gap-2">
                   {/* Left: Scrollable Minimal Page Tabs */}
                   <div className="flex items-center space-x-2 overflow-x-auto scrollbar-none max-w-full py-1 px-1 scroll-smooth flex-1 min-w-0">
                     {(activeModule.pages || []).map((p, idx) => {
@@ -651,17 +688,17 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                       );
                     })}
 
-                    {/* Tombol Tambah Halaman (+) di Samping Tab */}
-                    <div className="relative shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setAddPageDropdownOpen(!addPageDropdownOpen)}
-                        className="h-10 px-3 bg-emerald-500/30 hover:bg-emerald-500/50 text-emerald-100 border border-emerald-400/40 rounded-xl text-xs font-black flex items-center space-x-1.5 transition-all cursor-pointer shrink-0"
-                        title="Tambah Halaman Baru ke Modul Ini"
-                      >
-                        <Plus className="w-4 h-4 text-emerald-200" />
-                        <span className="hidden sm:inline">Halaman</span>
-                      </button>
+                      {/* Tombol Tambah Halaman (+) di Samping Tab */}
+                      <div className="relative shrink-0 z-[100]">
+                        <button
+                          type="button"
+                          onPointerDown={e => { e.preventDefault(); setAddPageDropdownOpen(!addPageDropdownOpen); }}
+                          className="h-10 px-3 bg-emerald-500/30 hover:bg-emerald-500/50 text-emerald-100 border border-emerald-400/40 rounded-xl text-xs font-black flex items-center space-x-1.5 transition-all cursor-pointer shrink-0"
+                          title="Tambah Halaman Baru ke Modul Ini"
+                        >
+                          <Plus className="w-4 h-4 text-emerald-200" />
+                          <span className="hidden sm:inline">Halaman</span>
+                        </button>
 
                       {/* Dropdown Menu Tambah Halaman */}
                       {addPageDropdownOpen && (
@@ -735,10 +772,7 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                     {/* Header Halaman */}
                     <div className="border-b border-slate-200 pb-3 flex items-center justify-between flex-wrap gap-2">
                       <div className="min-w-0 flex-1">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 block">
-                          Halaman {activePageIndex + 1} dari {activeModule.pages.length}
-                        </span>
-                        <div className="flex items-center space-x-2 mt-0.5">
+                        <div className="flex items-center space-x-2">
                           <h3 className="text-lg sm:text-2xl font-black text-slate-900 truncate">
                             {activePage.title}
                           </h3>
@@ -759,31 +793,11 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
 
                       {/* Tombol Aksi Halaman */}
                       <div className="flex items-center space-x-1.5 shrink-0">
-                        {/* Geser Urutan */}
-                        <button
-                          type="button"
-                          disabled={activePageIndex === 0 || activePage.type === 'quiz'}
-                          onClick={() => handleMovePage(activePageIndex, 'up')}
-                          className="p-2 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-20 cursor-pointer"
-                          title="Geser Halaman ke Kiri / Sebelumnya"
-                        >
-                          <MoveUp className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={activePageIndex === (activeModule.pages.length - 1) || activePage.type === 'quiz'}
-                          onClick={() => handleMovePage(activePageIndex, 'down')}
-                          className="p-2 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-20 cursor-pointer"
-                          title="Geser Halaman ke Kanan / Berikutnya"
-                        >
-                          <MoveDown className="w-3.5 h-3.5" />
-                        </button>
-
                         {/* Edit Detail Halaman Modal */}
                         <button
                           type="button"
                           onClick={() => setEditingPage({ isNew: false, page: { ...activePage } })}
-                          className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 cursor-pointer shadow-xs"
+                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 cursor-pointer shadow-xs"
                           title="Edit Pengaturan & Konten Halaman"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
@@ -812,45 +826,8 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                     {activePage.type === 'materi' && (
                       <div className="space-y-6">
                         {/* Teks Materi Pembelajaran */}
-                        <div className="space-y-2">
-                          <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                            <span>Isi Teks Pembelajaran:</span>
-                            <span className="text-[11px] text-slate-400 font-normal">
-                              Klik "Edit Halaman" untuk mengubah secara mendalam
-                            </span>
-                          </label>
-                          <div className="bg-emerald-50/40 p-4 sm:p-6 rounded-2xl border border-emerald-100 text-slate-800 text-sm sm:text-base leading-relaxed whitespace-pre-line font-normal">
-                            {activePage.content || 'Materi pembelajaran belum diisi.'}
-                          </div>
-                        </div>
-
-                        {/* Info Jeda Baca & Soal Penguncian */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
-                          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
-                            <span className="text-xs font-bold text-slate-700 flex items-center space-x-1.5">
-                              <Clock className="w-4 h-4 text-emerald-600" />
-                              <span>Waktu Jeda Baca Siswa</span>
-                            </span>
-                            <p className="text-sm font-black text-slate-900">
-                              {activePage.readingDelaySeconds ?? 10} detik
-                            </p>
-                            <span className="text-[11px] text-slate-500 block">
-                              Siswa harus menunggu timer membaca sebelum soal penguncian muncul.
-                            </span>
-                          </div>
-
-                          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
-                            <span className="text-xs font-bold text-slate-700 flex items-center space-x-1.5">
-                              <Lock className="w-4 h-4 text-amber-600" />
-                              <span>Soal Penguncian Halaman</span>
-                            </span>
-                            <p className="text-xs font-bold text-slate-800 truncate">
-                              {activePage.lockQuestion?.question || 'Belum diatur'}
-                            </p>
-                            <span className="text-[11px] text-emerald-700 font-semibold block">
-                              Kunci: {activePage.lockQuestion?.options[activePage.lockQuestion?.correctAnswerIndex ?? 0] || '-'}
-                            </span>
-                          </div>
+                        <div className="bg-emerald-50/40 p-4 sm:p-6 rounded-2xl border border-emerald-100 text-slate-800 text-sm sm:text-base leading-relaxed font-normal">
+                          <KontenDokumen html={activePage.content || '<p><br></p>'} />
                         </div>
                       </div>
                     )}
@@ -858,81 +835,32 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                     {/* B. TAMPILAN GAME EDUKASI */}
                     {activePage.type === 'game' && (
                       <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-700 flex items-center space-x-1.5">
-                            <Gamepad2 className="w-4 h-4 text-purple-600" />
-                            <span>Game Edukasi (HTML Sandbox)</span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setShowGamePreview(!showGamePreview)}
-                            className="text-xs font-bold text-purple-700 hover:text-purple-900 flex items-center space-x-1 cursor-pointer"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            <span>{showGamePreview ? 'Sembunyikan Pratinjau' : 'Lihat Pratinjau Game'}</span>
-                          </button>
+                        <h4 className="text-sm font-black text-slate-900 flex items-center space-x-1.5">
+                          <Gamepad2 className="w-4 h-4 text-purple-600" />
+                          <span>Pengaturan Game</span>
+                        </h4>
+                        <div className="p-4 bg-purple-50 rounded-2xl border border-purple-200 text-xs text-purple-950">
+                          <p>Game terpasang: {activePage.title}</p>
+                          <p>Kode HTML: {activePage.gameHtml?.length || 0} karakter</p>
                         </div>
-
-                        {showGamePreview ? (
-                          <div className="h-80 w-full rounded-2xl overflow-hidden border-2 border-purple-300 shadow-md bg-slate-900">
-                            <iframe
-                              srcDoc={activePage.gameHtml || '<div style="color:white;padding:20px;">Kosong</div>'}
-                              title="Pratinjau Game"
-                              sandbox="allow-scripts allow-same-origin allow-forms"
-                              className="w-full h-full border-none"
-                            />
-                          </div>
-                        ) : (
-                          <div className="p-4 bg-purple-50/50 rounded-2xl border border-purple-200 text-xs text-purple-950 space-y-1.5">
-                            <p className="font-bold">Kode HTML Game terpasang ({activePage.gameHtml?.length || 0} karakter).</p>
-                            <p className="text-slate-600">Tekan tombol "Lihat Pratinjau Game" di atas untuk mencoba memainkan game secara langsung.</p>
-                          </div>
-                        )}
                       </div>
                     )}
 
                     {/* C. TAMPILAN KUIS AKHIR */}
                     {activePage.type === 'quiz' && (
                       <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h4 className="text-sm font-black text-slate-900 flex items-center space-x-1.5">
-                              <HelpCircle className="w-4 h-4 text-amber-600" />
-                              <span>Daftar Soal Kuis Akhir ({activePage.quizQuestions?.length || 0} Soal)</span>
-                            </h4>
-                            <span className="text-[11px] text-slate-500">
-                              {activePage.randomizeQuestions ? 'Soal dan opsi diacak untuk setiap siswa' : 'Urutan soal tetap'}
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setEditingPage({ isNew: false, page: { ...activePage } })}
-                            className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center space-x-1 cursor-pointer shadow-xs"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>Kelola Soal Kuis</span>
-                          </button>
-                        </div>
-
-                        <div className="space-y-2.5">
+                        <h4 className="text-sm font-black text-slate-900 flex items-center space-x-1.5">
+                          <HelpCircle className="w-4 h-4 text-amber-600" />
+                          <span>Pratinjau {activePage.quizQuestions?.length || 0} Soal Kuis</span>
+                        </h4>
+                        <div className="space-y-3">
                           {(activePage.quizQuestions || []).map((q, qIdx) => (
-                            <div key={q.id} className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-1.5">
-                              <div className="flex items-center justify-between font-black text-slate-900">
-                                <span>{qIdx + 1}. {q.question}</span>
-                              </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1 text-[11px]">
+                            <div key={q.id} className="p-3.5 bg-amber-50 rounded-2xl border border-amber-200 text-xs">
+                              <p className="font-bold text-slate-900">{qIdx + 1}. {q.question}</p>
+                              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                                 {q.options.map((opt, optIdx) => (
-                                  <div
-                                    key={optIdx}
-                                    className={`p-2 rounded-xl border ${
-                                      optIdx === q.correctAnswerIndex
-                                        ? 'bg-emerald-100 border-emerald-400 text-emerald-950 font-black'
-                                        : 'bg-white border-slate-200 text-slate-600'
-                                    }`}
-                                  >
-                                    <span className="font-bold mr-1">{String.fromCharCode(65 + optIdx)}.</span>
-                                    <span>{opt}</span>
-                                    {optIdx === q.correctAnswerIndex && ' ✓ (Benar)'}
+                                  <div key={optIdx} className={`p-1.5 rounded ${optIdx === q.correctAnswerIndex ? 'bg-emerald-100 font-bold' : ''}`}>
+                                    {String.fromCharCode(65 + optIdx)}. {opt}
                                   </div>
                                 ))}
                               </div>
@@ -1085,8 +1013,8 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                 </button>
               </div>
 
-              {/* Modul List in Sidebar */}
-              <div className="flex-1 overflow-y-auto py-2 space-y-2">
+              {/* Modul List in Sidebar - Single Line Minimalist */}
+              <div className="flex-1 overflow-y-auto py-2 space-y-1.5">
                 {modules.length === 0 ? (
                   <div className="text-center py-8 text-xs text-teal-300/60">
                     Belum ada modul.
@@ -1097,15 +1025,16 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                     return (
                       <div
                         key={mod.id}
-                        className={`p-3 rounded-2xl border transition-all flex flex-col space-y-2 ${
+                        className={`px-2.5 py-2 rounded-xl border transition-all flex items-center justify-between gap-1.5 ${
                           isSelected
-                            ? 'bg-teal-700/80 border-teal-300 text-white shadow-lg shadow-teal-950/40 ring-1 ring-teal-300'
-                            : 'bg-teal-950/50 hover:bg-teal-900/60 border-teal-500/25 text-teal-100'
+                            ? 'bg-teal-700/90 border-teal-300 text-white shadow-md'
+                            : 'bg-teal-950/60 hover:bg-teal-900/60 border-teal-500/25 text-teal-100'
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-1.5">
+                        {/* Left: Title + Edit Button */}
+                        <div className="flex items-center space-x-1.5 min-w-0 flex-1">
                           <div
-                            className="flex items-center space-x-2 min-w-0 flex-1 cursor-pointer"
+                            className="min-w-0 flex-1 cursor-pointer flex items-center space-x-1.5"
                             onClick={() => {
                               setActiveModuleId(mod.id);
                               setActivePageIndex(0);
@@ -1113,30 +1042,40 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                               setIsSidebarOpen(false);
                             }}
                           >
-                            <div className={`w-7 h-7 rounded-lg font-black text-xs flex items-center justify-center shrink-0 ${
-                              isSelected ? 'bg-white text-emerald-950 font-black' : 'bg-teal-900/80 text-teal-200'
-                            }`}>
-                              {idx + 1}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <input
-                                type="text"
-                                value={mod.title}
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) => {
-                                  const updated = { ...mod, title: e.target.value };
-                                  handleUpdateActiveModule(updated);
-                                }}
-                                className="font-bold text-xs bg-transparent border-b border-transparent hover:border-teal-400 focus:border-teal-300 focus:outline-none w-full text-white truncate"
-                                title="Klik untuk mengubah judul modul"
-                              />
-                              <span className="text-[10px] text-teal-300/80 block">
-                                {mod.pages?.length || 0} Halaman Materi
-                              </span>
-                            </div>
+                            <span className="font-black text-xs shrink-0">{idx + 1}.</span>
+                            {renamingModuleId === mod.id ? (
+                                <input
+                                    type="text"
+                                    value={mod.title}
+                                    autoFocus
+                                    onBlur={() => setRenamingModuleId(null)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') setRenamingModuleId(null); }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => {
+                                        const updated = { ...mod, title: e.target.value };
+                                        handleUpdateActiveModule(updated);
+                                    }}
+                                    className="font-bold text-xs bg-white text-slate-900 border border-teal-300 rounded px-1 w-full truncate"
+                                    title="Nama modul"
+                                />
+                            ) : (
+                                <span className="font-bold text-xs text-white truncate">{mod.title}</span>
+                            )}
                           </div>
+                          {renamingModuleId !== mod.id && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setRenamingModuleId(mod.id); }}
+                                className="p-1 text-teal-300 hover:text-white cursor-pointer shrink-0"
+                                title="Ubah nama modul"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                              </button>
+                          )}
+                        </div>
 
-                          {/* Status Kunci Password */}
+                        {/* Right Icon Actions: Lock/Unlock, Save, Delete */}
+                        <div className="flex items-center space-x-1 shrink-0">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1144,94 +1083,42 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                               const updated = { ...mod, isLockedWithPassword: !mod.isLockedWithPassword };
                               handleUpdateActiveModule(updated);
                             }}
-                            className={`text-[9px] font-black px-1.5 py-0.5 rounded border flex items-center space-x-1 shrink-0 cursor-pointer ${
+                            className={`p-1 rounded-lg border transition-all cursor-pointer ${
                               mod.isLockedWithPassword
                                 ? 'bg-rose-500/20 text-rose-200 border-rose-400/40'
                                 : 'bg-emerald-500/20 text-emerald-200 border-emerald-400/40'
                             }`}
-                            title="Klik untuk kunci / buka password"
+                            title={mod.isLockedWithPassword ? 'Modul Terkunci' : 'Modul Terbuka'}
                           >
-                            {mod.isLockedWithPassword ? <Lock className="w-2.5 h-2.5" /> : <Unlock className="w-2.5 h-2.5" />}
-                            <span>{mod.isLockedWithPassword ? 'Terkunci' : 'Terbuka'}</span>
+                            {mod.isLockedWithPassword ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
                           </button>
-                        </div>
-
-                        {/* Input Password Jika Terkunci */}
-                        {mod.isLockedWithPassword && (
-                          <div className="pt-1">
-                            <input
-                              type="text"
-                              value={mod.password || ''}
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => {
-                                const updated = { ...mod, password: e.target.value };
-                                handleUpdateActiveModule(updated);
-                              }}
-                              placeholder="Password modul..."
-                              className="w-full px-2.5 py-1 text-[11px] font-mono font-bold rounded-lg bg-teal-950 border border-teal-500/40 text-teal-100 focus:outline-none focus:ring-1 focus:ring-teal-300"
-                            />
-                          </div>
-                        )}
-
-                        {/* Actions Modul */}
-                        <div className="pt-2 border-t border-teal-500/20 flex items-center justify-between text-xs">
-                          <div className="flex items-center space-x-1">
-                            <button
-                              type="button"
-                              disabled={idx === 0}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleMoveModule(idx, 'up');
-                              }}
-                              className="p-1 hover:bg-teal-800/50 text-teal-300 disabled:opacity-20 rounded-lg cursor-pointer"
-                              title="Geser Naik"
-                            >
-                              <MoveUp className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              disabled={idx === modules.length - 1}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleMoveModule(idx, 'down');
-                              }}
-                              className="p-1 hover:bg-teal-800/50 text-teal-300 disabled:opacity-20 rounded-lg cursor-pointer"
-                              title="Geser Turun"
-                            >
-                              <MoveDown className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDeleteConfirm({
-                                  type: 'module',
-                                  id: mod.id,
-                                  title: mod.title,
-                                });
-                              }}
-                              className="p-1 hover:bg-rose-950/50 text-rose-300 rounded-lg cursor-pointer"
-                              title="Hapus Modul"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
 
                           <button
                             type="button"
-                            onClick={() => {
-                              setActiveModuleId(mod.id);
-                              setActivePageIndex(0);
-                              setSubTab('modules');
-                              setIsSidebarOpen(false);
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSaveSingleModuleToFirebase(mod);
                             }}
-                            className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
-                              isSelected
-                                ? 'bg-white text-emerald-950 font-black'
-                                : 'bg-teal-900/80 text-teal-200 hover:bg-teal-800'
-                            }`}
+                            className="p-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/40 transition-all cursor-pointer"
+                            title="Simpan Modul ini ke Firebase"
                           >
-                            {isSelected ? 'Aktif' : 'Buka'}
+                            <Save className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteConfirm({
+                                type: 'module',
+                                id: mod.id,
+                                title: mod.title,
+                              });
+                            }}
+                            className="p-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-400/40 transition-all cursor-pointer"
+                            title="Hapus Modul"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </div>
@@ -1317,14 +1204,7 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
 
             <div className="bg-white rounded-3xl max-w-2xl w-full p-4 sm:p-6 shadow-2xl border border-slate-200 relative z-10 space-y-4 max-h-[92vh] overflow-y-auto text-slate-800">
               <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">
-                    {editingPage.isNew ? 'Tambah Halaman Baru' : 'Edit Pengaturan Halaman'}
-                  </span>
-                  <h3 className="font-black text-base text-slate-900">
-                    {editingPage.page.title}
-                  </h3>
-                </div>
+                <div />
                 <button
                   type="button"
                   onClick={() => setEditingPage(null)}
@@ -1335,83 +1215,78 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
               </div>
 
               {/* Form Input Dasar */}
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Judul Halaman
-                  </label>
-                  <input
-                    type="text"
-                    value={editingPage.page.title}
-                    onChange={(e) =>
-                      setEditingPage({
-                        ...editingPage,
-                        page: { ...editingPage.page, title: e.target.value },
-                      })
-                    }
-                    placeholder="Contoh: Pengantar Daur Ulang Plastik"
-                    className="w-full px-3 py-2 text-xs sm:text-sm font-bold rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
+              <div className="space-y-4">
 
                 {/* A. FORM MATERI */}
                 {editingPage.page.type === 'materi' && (
                   <div className="space-y-4">
                     <div>
                       <label className="text-xs font-bold text-slate-700 block mb-1">
-                        Isi Materi Pembelajaran (Teks Bebas)
+                        Isi Halaman
                       </label>
-                      <textarea
-                        rows={7}
-                        value={editingPage.page.content || ''}
+
+                      <RichTextEditor
+                        initialValue={editingPage.page.content || ''}
+                        documentId={editingPage.page.id}
+                        onSave={(html) =>
+                          setEditingPage({
+                            ...editingPage,
+                            page: { ...editingPage.page, content: html },
+                          })
+                        }
+                      />
+
+                      {/* Live WYSIWYG Video Preview */}
+                      {editingPage.page.content && editingPage.page.content.includes('[embed]') && (
+                        <div className="mt-3 p-3 bg-slate-900 rounded-2xl space-y-2">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                            Pratinjau Video (WYSIWYG)
+                          </span>
+                          {(() => {
+                            const match = editingPage.page.content.match(/\[embed\](.*?)\[\/embed\]/);
+                            const videoUrl = match ? match[1] : '';
+                            return videoUrl ? (
+                              <div className="aspect-video w-full rounded-xl overflow-hidden bg-black">
+                                <iframe
+                                  src={videoUrl}
+                                  title="Pratinjau Video"
+                                  className="w-full h-full border-none"
+                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                  allowFullScreen
+                                />
+                              </div>
+                            ) : null;
+                          })()}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <Clock className="w-4 h-4 text-emerald-600" />
+                        <span className="text-xs font-bold text-slate-700">Waktu Jeda Baca Siswa (Detik)</span>
+                      </div>
+                      <input
+                        type="number"
+                        min={0}
+                        max={300}
+                        value={editingPage.page.readingDelaySeconds ?? 10}
                         onChange={(e) =>
                           setEditingPage({
                             ...editingPage,
-                            page: { ...editingPage.page, content: e.target.value },
+                            page: {
+                              ...editingPage.page,
+                              readingDelaySeconds: parseInt(e.target.value) || 0,
+                            },
                           })
                         }
-                        placeholder="Tuliskan materi pembelajaran kreasi daur ulang..."
-                        className="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 leading-relaxed"
+                        className="w-20 px-3 py-1.5 text-center font-bold text-xs rounded-xl border border-slate-300 bg-white shadow-xs"
                       />
-                    </div>
-
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-bold text-slate-700 flex items-center space-x-1.5">
-                          <Clock className="w-4 h-4 text-emerald-600" />
-                          <span>Waktu Jeda Baca Siswa (Detik)</span>
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={300}
-                          value={editingPage.page.readingDelaySeconds ?? 10}
-                          onChange={(e) =>
-                            setEditingPage({
-                              ...editingPage,
-                              page: {
-                                ...editingPage.page,
-                                readingDelaySeconds: parseInt(e.target.value) || 0,
-                              },
-                            })
-                          }
-                          className="w-20 px-2 py-1 text-center font-bold text-xs rounded-lg border border-slate-300 bg-white"
-                        />
-                      </div>
-                      <p className="text-[11px] text-slate-500 leading-relaxed">
-                        Siswa harus menunggu timer membaca sebelum soal penguncian pemahaman muncul.
-                      </p>
                     </div>
 
                     {/* Soal Penguncian Materi */}
                     <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-200 space-y-3">
-                      <div className="flex items-center space-x-2 text-emerald-800 font-black text-xs">
-                        <Lock className="w-4 h-4" />
-                        <span>Pertanyaan Penguncian Pemahaman Materi</span>
-                      </div>
-
-                      <input
-                        type="text"
+                      <AutoResizeTextarea
                         value={editingPage.page.lockQuestion?.question || ''}
                         onChange={(e) => {
                           const currentLock = editingPage.page.lockQuestion || {
@@ -1428,14 +1303,11 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                             },
                           });
                         }}
-                        placeholder="Pertanyaan pemahaman materi..."
-                        className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 bg-white"
+                        placeholder="Pertanyaan penguncian pemahaman..."
+                        className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 bg-white shadow-xs resize-none"
                       />
 
-                      <div className="space-y-1.5">
-                        <label className="text-[11px] font-bold text-slate-700 block">
-                          Pilihan Jawaban (Pilih Lingkaran untuk Kunci Jawaban Benar):
-                        </label>
+                      <div className="space-y-2">
                         {(editingPage.page.lockQuestion?.options || ['A', 'B', 'C', 'D']).map((opt, optIdx) => (
                           <div key={optIdx} className="flex items-center space-x-2">
                             <input
@@ -1459,8 +1331,7 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                               }}
                               className="w-4 h-4 text-emerald-600 cursor-pointer"
                             />
-                            <input
-                              type="text"
+                            <AutoResizeTextarea
                               value={opt}
                               onChange={(e) => {
                                 const currentLock = editingPage.page.lockQuestion || {
@@ -1479,7 +1350,7 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                                   },
                                 });
                               }}
-                              className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white"
+                              className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white shadow-xs resize-none"
                             />
                           </div>
                         ))}
@@ -1603,8 +1474,7 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                             </button>
                           </div>
 
-                          <input
-                            type="text"
+                          <AutoResizeTextarea
                             value={qItem.question}
                             onChange={(e) => {
                               const updatedList = [...(editingPage.page.quizQuestions || [])];
@@ -1615,7 +1485,7 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                               });
                             }}
                             placeholder="Pertanyaan soal kuis..."
-                            className="w-full px-3 py-2 text-xs sm:text-sm font-semibold rounded-xl border border-slate-300 bg-white"
+                            className="w-full px-3 py-2 text-xs sm:text-sm font-semibold rounded-xl border border-slate-300 bg-white shadow-xs resize-none"
                           />
 
                           <div className="space-y-2">
@@ -1635,8 +1505,7 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                                   }}
                                   className="w-4 h-4 text-amber-600 cursor-pointer"
                                 />
-                                <input
-                                  type="text"
+                                <AutoResizeTextarea
                                   value={opt}
                                   onChange={(e) => {
                                     const updatedList = [...(editingPage.page.quizQuestions || [])];
@@ -1648,7 +1517,7 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                                       page: { ...editingPage.page, quizQuestions: updatedList },
                                     });
                                   }}
-                                  className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white"
+                                  className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white shadow-xs resize-none"
                                 />
                               </div>
                             ))}
@@ -1675,7 +1544,7 @@ export const ModuleManagement: React.FC<ModuleManagementProps> = ({
                   className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-xs cursor-pointer flex items-center space-x-1.5"
                 >
                   <Save className="w-4 h-4" />
-                  <span>Simpan Perubahan Halaman</span>
+                  <span>SIMPAN LOKAL</span>
                 </button>
               </div>
             </div>

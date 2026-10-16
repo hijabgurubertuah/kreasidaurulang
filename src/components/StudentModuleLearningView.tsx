@@ -12,6 +12,7 @@ import {
   listenToStudentProgress,
   saveStudentProgressInDb,
 } from '../services/firestoreService';
+import { sanitizeHtml } from '../utils/sanitize';
 import {
   BookOpen,
   Lock,
@@ -215,18 +216,9 @@ export const StudentModuleLearningView: React.FC<StudentModuleLearningViewProps>
     setLockQuestionError(null);
     setLockQuestionSuccess(false);
 
-    // If page is materi: check if already completed
+    // If page is materi: show lock question immediately
     if (activePage.type === 'materi') {
-      const isAlreadyUnlocked = currentProgress?.unlockedPageIds?.includes(activePage.id);
-      if (isAlreadyUnlocked) {
-        // Already unlocked previously, show directly
-        setReadingTimer(0);
-        setCanShowLockQuestion(true);
-      } else {
-        const delay = activePage.readingDelaySeconds ?? 10;
-        setReadingTimer(delay);
-        setCanShowLockQuestion(delay <= 0);
-      }
+      setCanShowLockQuestion(true);
     }
 
     // If page is quiz: shuffle questions if requested
@@ -561,100 +553,87 @@ export const StudentModuleLearningView: React.FC<StudentModuleLearningViewProps>
             {activePage.type === 'materi' && (
               <div className="space-y-6">
                 {/* Teks Materi */}
-                <div className="prose prose-slate max-w-none text-slate-800 text-sm sm:text-base leading-relaxed whitespace-pre-line font-normal bg-emerald-50/40 p-4 sm:p-6 rounded-2xl border border-emerald-100">
-                  {activePage.content || 'Materi pembelajaran belum diisi.'}
-                </div>
+                <div 
+                  className="prose prose-slate max-w-none text-slate-800 text-sm sm:text-base leading-relaxed font-normal bg-emerald-50/40 p-4 sm:p-6 rounded-2xl border border-emerald-100 konten-dokumen"
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(activePage.content || '<p><br></p>', true) }}
+                />
 
-                {/* HITUNG MUNDUR BACA & SOAL PENGUNCIAN */}
-                {activePage.lockQuestion && (
-                  <div className="border-t border-slate-200 pt-5 space-y-4">
-                    {!canShowLockQuestion ? (
-                      <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center space-x-3 text-amber-900">
-                        <Clock className="w-5 h-5 text-amber-600 animate-spin shrink-0" />
-                        <div>
-                          <strong className="text-xs sm:text-sm font-bold block">
-                            Silakan baca dan pahami materi di atas terlebih dahulu...
-                          </strong>
-                          <span className="text-xs text-amber-800">
-                            Pertanyaan pemahaman akan muncul dalam: <strong>{readingTimer} detik</strong>
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="bg-slate-50 p-4 sm:p-6 rounded-2xl border border-slate-200 space-y-4 animate-fadeIn">
-                        <div className="flex items-center space-x-2 text-emerald-800 font-black text-xs sm:text-sm uppercase tracking-wide">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          <span>Kuis Pemahaman (Buka Halaman Berikutnya)</span>
-                        </div>
-
-                        <p className="font-bold text-slate-900 text-sm sm:text-base">
-                          {activePage.lockQuestion.question}
-                        </p>
-
-                        {/* Pilihan Ganda */}
-                        <div className="space-y-2">
-                          {activePage.lockQuestion.options.map((opt, oIdx) => {
-                            const isSelected = selectedLockAnswer === oIdx;
-                            return (
-                              <button
-                                key={oIdx}
-                                type="button"
-                                disabled={lockQuestionSuccess}
-                                onClick={() => {
-                                  setSelectedLockAnswer(oIdx);
-                                  setLockQuestionError(null);
-                                }}
-                                className={`w-full text-left p-3.5 rounded-xl text-xs sm:text-sm font-bold transition-all border cursor-pointer flex items-center space-x-3 ${
-                                  isSelected
-                                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                                    : 'bg-white text-slate-800 border-slate-200 hover:border-emerald-300'
-                                }`}
-                              >
-                                <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black shrink-0 ${
-                                  isSelected ? 'bg-white text-emerald-800' : 'bg-slate-100 text-slate-600'
-                                }`}>
-                                  {String.fromCharCode(65 + oIdx)}
-                                </span>
-                                <span className="flex-1">{opt}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        {/* Feedback Galat / Sukses */}
-                        {lockQuestionError && (
-                          <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs sm:text-sm font-semibold flex items-center space-x-2">
-                            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                            <span>{lockQuestionError}</span>
+                    {/* SOAL PENGUNCIAN */}
+                    {activePage.lockQuestion && (
+                      <div className="border-t border-slate-200 pt-5 space-y-4">
+                        <div className="bg-slate-50 p-4 sm:p-6 rounded-2xl border border-slate-200 space-y-4 animate-fadeIn">
+                          <div className="flex items-center space-x-2 text-emerald-800 font-black text-xs sm:text-sm uppercase tracking-wide">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <span>Jawab untuk maju ke halaman berikutnya</span>
                           </div>
-                        )}
 
-                        {lockQuestionSuccess && (
-                          <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl text-xs sm:text-sm font-bold flex items-center space-x-2 animate-bounce">
-                            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                            <span>Hebat! Jawabanmu benar. Membuka halaman berikutnya...</span>
+                          <p className="font-bold text-slate-900 text-sm sm:text-base">
+                            {activePage.lockQuestion.question}
+                          </p>
+
+                          {/* Pilihan Ganda */}
+                          <div className="space-y-2">
+                            {activePage.lockQuestion.options.map((opt, oIdx) => {
+                              const isSelected = selectedLockAnswer === oIdx;
+                              return (
+                                <button
+                                  key={oIdx}
+                                  type="button"
+                                  disabled={lockQuestionSuccess}
+                                  onClick={() => {
+                                    setSelectedLockAnswer(oIdx);
+                                    setLockQuestionError(null);
+                                  }}
+                                  className={`w-full text-left p-3.5 rounded-xl text-xs sm:text-sm font-bold transition-all border cursor-pointer flex items-center space-x-3 ${
+                                    isSelected
+                                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                                      : 'bg-white text-slate-800 border-slate-200 hover:border-emerald-300'
+                                  }`}
+                                >
+                                  <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black shrink-0 ${
+                                    isSelected ? 'bg-white text-emerald-800' : 'bg-slate-100 text-slate-600'
+                                  }`}>
+                                    {String.fromCharCode(65 + oIdx)}
+                                  </span>
+                                  <span className="flex-1">{opt}</span>
+                                </button>
+                              );
+                            })}
                           </div>
-                        )}
 
-                        {!lockQuestionSuccess && (
-                          <button
-                            type="button"
-                            disabled={selectedLockAnswer === null}
-                            onClick={handleCheckLockAnswer}
-                            className={`w-full sm:w-auto px-6 py-3 rounded-xl font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center space-x-2 ${
-                              selectedLockAnswer !== null
-                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                            }`}
-                          >
-                            <span>Periksa Jawaban & Lanjut</span>
-                            <ArrowRight className="w-4 h-4" />
-                          </button>
-                        )}
+                          {/* Feedback Galat / Sukses */}
+                          {lockQuestionError && (
+                            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs sm:text-sm font-semibold flex items-center space-x-2">
+                              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                              <span>{lockQuestionError}</span>
+                            </div>
+                          )}
+
+                          {lockQuestionSuccess && (
+                            <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl text-xs sm:text-sm font-bold flex items-center space-x-2 animate-bounce">
+                              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                              <span>Hebat! Jawabanmu benar. Membuka halaman berikutnya...</span>
+                            </div>
+                          )}
+
+                          {!lockQuestionSuccess && (
+                            <button
+                              type="button"
+                              disabled={selectedLockAnswer === null}
+                              onClick={handleCheckLockAnswer}
+                              className={`w-full sm:w-auto px-6 py-3 rounded-xl font-black text-xs sm:text-sm transition-all cursor-pointer flex items-center justify-center space-x-2 ${
+                                selectedLockAnswer !== null
+                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                              }`}
+                            >
+                              <span>Periksa Jawaban & Lanjut</span>
+                              <ArrowRight className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
-                  </div>
-                )}
               </div>
             )}
 

@@ -8,6 +8,7 @@ import { AdminPortalView } from './components/AdminPortalView';
 import { AdminSyncModal } from './components/AdminSyncModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { CriteriaSidebar } from './components/CriteriaSidebar';
+import { ToastProvider } from './components/ToastProvider';
 import {
   ClassRoom,
   Student,
@@ -97,7 +98,6 @@ export default function App() {
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [adminModalTab, setAdminModalTab] = useState<'csv' | 'codes'>('csv');
   const [firebaseConnected, setFirebaseConnected] = useState(false);
-  const [saveSuccessNotification, setSaveSuccessNotification] = useState<string | null>(null);
   const [adminPortalTab, setAdminPortalTab] = useState<string>('students');
 
   // Sync currentUser changes to localStorage
@@ -640,7 +640,8 @@ export default function App() {
     activePage === 'student-view';
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-emerald-200 selection:text-emerald-900">
+    <ToastProvider>
+      <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-emerald-200 selection:text-emerald-900">
       {/* Top Navigation - Tidak tampil saat halaman modul (admin atau siswa) agar full screen tanpa menu/bar lain */}
       {activePage !== 'login' && !isModuleFullScreen && (
         <Navbar
@@ -654,21 +655,7 @@ export default function App() {
       )}
 
       {/* Global Toast Notification */}
-      {saveSuccessNotification && (
-        <div className="fixed bottom-4 right-4 z-50 max-w-md bg-slate-900 text-white p-3.5 rounded-2xl shadow-2xl border border-emerald-500/40 flex items-center space-x-3 animate-fadeIn">
-          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-          <span className="text-xs font-semibold leading-relaxed flex-1">
-            {saveSuccessNotification}
-          </span>
-          <button
-            type="button"
-            onClick={() => setSaveSuccessNotification(null)}
-            className="text-slate-400 hover:text-white p-1 rounded-lg"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+      {/* Toast notifications now handled by ToastProvider */}
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col">
@@ -800,5 +787,6 @@ export default function App() {
       {/* Offline Mode Alert */}
       <OfflineIndicator />
     </div>
-  );
+  </ToastProvider>
+);
 }

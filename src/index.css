@@ -57,3 +57,11 @@
     color: black !important;
   }
 }
+
+.konten-dokumen ul { list-style: disc; padding-left: 1.5rem; }
+.konten-dokumen ol { list-style: decimal; padding-left: 1.5rem; }
+.konten-dokumen p { margin: 0 0 0.75rem; }
+.konten-dokumen img { max-width: 100%; height: auto; }
+.konten-dokumen .video-wrap { position: relative; aspect-ratio: 16/9; }
+.konten-dokumen .video-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; }
+.konten-dokumen { word-break: break-word; }
