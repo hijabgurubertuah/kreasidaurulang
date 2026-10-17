@@ -40,11 +40,8 @@ import {
   ChevronUp,
   ChevronDown,
   BookOpen,
-  ArrowLeft,
-  HardDrive,
 } from 'lucide-react';
 import { ModuleManagement } from './ModuleManagement';
-import { GoogleWorkspaceModal } from './GoogleWorkspaceModal';
 import {
   ClassRoom,
   Student,
@@ -56,6 +53,7 @@ import {
 } from '../types';
 import { parseStudentCsv, ParsedCsvResult } from '../utils/csvParser';
 import { downloadSampleCsvTemplate } from '../utils/excelExport';
+import { consolidateClasses, matchStudentToClass } from '../utils/classHelper';
 import { getScoreColorScheme, getQuoteForScore } from './StudentPortalView';
 import { isMeetingOpened, formatIndonesianDate } from '../utils/scheduleHelper';
 import {
@@ -82,7 +80,7 @@ interface AdminPortalViewProps {
   criteria?: EvaluationCriteriaConfig;
   onSaveSchedule?: (schedule: MeetingSchedule) => void | Promise<void>;
   onSaveCriteria?: (criteria: EvaluationCriteriaConfig) => Promise<void>;
-  onBackToDashboard: () => void;
+  onBackToDashboard?: () => void;
   onSaveStudent: (student: Student) => void | Promise<void>;
   onDeleteStudent: (studentId: string) => void | Promise<void>;
   onBulkDeleteStudents: (studentIds: string[]) => void | Promise<void>;
@@ -178,7 +176,13 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
 
   // Search & filter for students
   const [searchStudent, setSearchStudent] = useState('');
-  const [selectedClassFilter, setSelectedClassFilter] = useState('Kelas 7A');
+  const [selectedClassFilter, setSelectedClassFilter] = useState('');
+  const [isClassColumnDropdownOpen, setIsClassColumnDropdownOpen] = useState(false);
+
+  // Consolidated active classes list strictly from imported Firebase students and database
+  const activeClasses = useMemo(() => {
+    return consolidateClasses(classes || [], students || []);
+  }, [classes, students]);
 
   // Checkbox selection state for bulk actions
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
@@ -193,14 +197,13 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   const [isFetchingSheet, setIsFetchingSheet] = useState(false);
   const [isSavingSpreadsheetUrl, setIsSavingSpreadsheetUrl] = useState(false);
   const [isDeletingSpreadsheetUrl, setIsDeletingSpreadsheetUrl] = useState(false);
-  const [isGoogleWorkspaceOpen, setIsGoogleWorkspaceOpen] = useState(false);
 
   // Student Form (Add / Edit Modal)
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [formNisn, setFormNisn] = useState('');
   const [formName, setFormName] = useState('');
-  const [formClassName, setFormClassName] = useState('Kelas 7A');
+  const [formClassName, setFormClassName] = useState('');
   const [formScore, setFormScore] = useState(80);
   const [formProject, setFormProject] = useState('');
   const [formNotes, setFormNotes] = useState('');
@@ -227,6 +230,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
 
   // Manual File CSV State
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const classButtonRef = useRef<HTMLButtonElement>(null);
   const [parsedData, setParsedData] = useState<ParsedCsvResult | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [isSyncingFile, setIsSyncingFile] = useState(false);
@@ -275,7 +279,12 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
         const matchSearch =
           s.name.toLowerCase().includes(searchStudent.toLowerCase()) ||
           s.nisn.includes(searchStudent);
-        const matchClass = selectedClassFilter ? s.className === selectedClassFilter : true;
+        let matchClass = true;
+        if (selectedClassFilter) {
+          const targetClean = selectedClassFilter.replace(/^Kelas\s+/i, '').trim().toLowerCase();
+          const sClean = (s.className || '').replace(/^Kelas\s+/i, '').trim().toLowerCase();
+          matchClass = s.className === selectedClassFilter || sClean === targetClean;
+        }
         return matchSearch && matchClass;
       })
       .sort((a, b) => {
@@ -649,59 +658,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     }
   };
 
-  // Import students from Google Sheets directly via OAuth
-  const handleImportStudentsFromGoogleSheets = (imported: Partial<Student>[]) => {
-    if (!imported || imported.length === 0) return;
-    const existingNisns = new Set(students.map((s) => s.nisn.trim()));
-    const newStudents: Student[] = [];
-
-    imported.forEach((item, idx) => {
-      if (!item.nisn || !item.name) return;
-      const cleanNisn = item.nisn.trim();
-      if (!existingNisns.has(cleanNisn)) {
-        const clsName = item.className || 'Kelas 7A';
-        const foundClass = classes.find((c) => c.name.toLowerCase() === clsName.toLowerCase());
-        const clsId = foundClass ? foundClass.id : `class-${clsName.toLowerCase().replace(/\s+/g, '-')}`;
-
-        newStudents.push({
-          id: `st-gs-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 5)}`,
-          nisn: cleanNisn,
-          name: item.name.trim(),
-          classId: clsId,
-          className: clsName,
-          score: 80,
-          projectTitle: item.projectTitle || 'Kreasi Daur Ulang Mandiri',
-          meetingScores: Array(20).fill(null),
-          meetingNotes: Array(20).fill(null),
-          meetingAbsences: Array(20).fill(false),
-          lastUpdated: new Date().toISOString(),
-        });
-        existingNisns.add(cleanNisn);
-      }
-    });
-
-    if (newStudents.length > 0) {
-      const combined = [...students, ...newStudents];
-      const classMap = new Map<string, ClassRoom>();
-      classes.forEach((c) => classMap.set(c.id, c));
-      newStudents.forEach((st) => {
-        if (!classMap.has(st.classId)) {
-          classMap.set(st.classId, {
-            id: st.classId,
-            name: st.className,
-            grade: st.className.replace(/\D/g, '') || '7',
-            studentCount: 1,
-            averageScore: 80,
-          });
-        }
-      });
-
-      onSyncCsvData(combined, Array.from(classMap.values()));
-      setSuccessMessage(`Berhasil menambahkan ${newStudents.length} siswa baru dari Google Sheets! Simpan ke Firebase untuk menyimpan permanen.`);
-    } else {
-      setSuccessMessage('Semua siswa dari Google Sheets sudah ada di database (tidak ada duplikasi).');
-    }
-  };
 
   // Student Form open handlers
 
@@ -709,7 +665,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     setEditingStudent(null);
     setFormNisn('');
     setFormName('');
-    setFormClassName(classes[0]?.name || 'Kelas 7A');
+    setFormClassName(activeClasses[0]?.name || classes[0]?.name || '');
     setFormScore(80);
     setFormProject('Kreasi Daur Ulang Mandiri');
     setFormNotes('');
@@ -1176,32 +1132,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
 
   return (
     <div className="w-full max-w-5xl mx-auto px-3 sm:px-6 py-4 space-y-4 animate-fadeIn">
-      {/* Top Admin Utility Bar with Google Drive & Sheets */}
-      <div className="flex items-center justify-between gap-2 bg-white p-3 rounded-2xl border border-slate-200/90 shadow-xs">
-        <div className="flex items-center space-x-2">
-          <button
-            type="button"
-            onClick={onBackToDashboard}
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Dashboard</span>
-          </button>
-          <span className="text-xs font-black text-slate-800 hidden sm:inline">Portal Administrasi Guru & Siswa</span>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <button
-            type="button"
-            onClick={() => setIsGoogleWorkspaceOpen(true)}
-            className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-xl text-xs font-black shadow-xs transition-all active:scale-95 cursor-pointer"
-            title="Buka Google Drive & Google Sheets untuk manajemen berkas dan ekspor online"
-          >
-            <HardDrive className="w-3.5 h-3.5 text-teal-200" />
-            <span>Google Drive & Sheets</span>
-          </button>
-        </div>
-      </div>
 
       {/* Notifications */}
       {successMessage && (
@@ -1445,18 +1375,35 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
             </div>
 
             <div className="flex items-center flex-wrap gap-2">
-              <select
-                value={selectedClassFilter}
-                onChange={(e) => setSelectedClassFilter(e.target.value)}
-                className="flex-1 sm:flex-none px-2.5 py-2 text-xs font-semibold rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                <option value="">Semua Kelas</option>
-                {classes.map((c) => (
-                  <option key={c.id} value={c.name}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              {/* Dropdown Pemilih Kelas - Menampilkan Seluruh Kelas Terdaftar */}
+              <div className="relative flex items-center min-w-[140px] sm:min-w-[160px]">
+                <select
+                  value={selectedClassFilter}
+                  onChange={(e) => setSelectedClassFilter(e.target.value)}
+                  className="w-full pl-3 pr-8 py-2 text-xs font-bold rounded-xl border border-slate-300 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500 appearance-none cursor-pointer text-slate-800 shadow-xs"
+                  title="Pilih filter kelas (Semua Kelas terdaftar)"
+                >
+                  <option value="">Semua Kelas ({activeClasses.length} Kelas)</option>
+                  {activeClasses.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2.5 pointer-events-none" />
+              </div>
+
+              {selectedClassFilter && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedClassFilter('')}
+                  className="flex items-center space-x-1 px-2.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                  title="Hapus filter kelas"
+                >
+                  <X className="w-3 h-3" />
+                  <span>Reset ({selectedClassFilter.replace(/^Kelas\s+/i, '')})</span>
+                </button>
+              )}
 
               {/* Tombol Centang Semua dengan sekali klik */}
               <button
@@ -1510,15 +1457,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
               </button>
 
               {/* Tombol Google Sheets */}
-              <button
-                type="button"
-                onClick={() => setIsGoogleWorkspaceOpen(true)}
-                className="flex items-center justify-center space-x-1.5 px-3 py-2 bg-gradient-to-r from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 text-teal-900 border border-teal-300 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer shadow-xs active:scale-95"
-                title="Buka Google Sheets & Drive untuk ekspor atau impor data siswa"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-teal-700" />
-                <span>Google Sheets</span>
-              </button>
 
               <button
                 type="button"
@@ -1607,7 +1545,14 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                             <span className="font-mono font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
                               NISN: {st.nisn}
                             </span>
-                            <span>{st.className}</span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedClassFilter(st.className)}
+                              className="font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200 cursor-pointer transition-colors"
+                              title={`Klik untuk memfilter kelas ${st.className}`}
+                            >
+                              {st.className}
+                            </button>
                           </div>
                         </div>
 
@@ -1673,7 +1618,94 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                     <th className="py-2.5 px-3">No</th>
                     <th className="py-2.5 px-3">NISN (Kode Login)</th>
                     <th className="py-2.5 px-3">Nama Siswa</th>
-                    <th className="py-2.5 px-3">Kelas</th>
+                    <th className="py-2.5 px-3 relative">
+                      <div className="relative inline-block text-left">
+                        <button
+                          ref={classButtonRef}
+                          type="button"
+                          onClick={() => setIsClassColumnDropdownOpen((prev) => !prev)}
+                          className={`flex items-center space-x-1.5 font-black uppercase text-[10px] px-2 py-1 rounded-lg transition-all cursor-pointer border ${
+                            selectedClassFilter
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                              : 'bg-slate-200/90 text-slate-800 hover:bg-emerald-100 hover:text-emerald-800 border-slate-300'
+                          }`}
+                          title="Klik kolom kelas untuk membuka pilihan semua kelas terdaftar"
+                        >
+                          <span>{selectedClassFilter ? `Kelas: ${selectedClassFilter.replace(/^Kelas\s+/i, '')}` : 'Kelas'}</span>
+                          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isClassColumnDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {/* Dropdown Menu Kelas - Menampilkan Semua Kelas Terdaftar via Portal */}
+                        {isClassColumnDropdownOpen && typeof document !== 'undefined' && createPortal(
+                          <>
+                            <div
+                              className="fixed inset-0 z-[9998]"
+                              onClick={() => setIsClassColumnDropdownOpen(false)}
+                            />
+                            <div
+                              style={{
+                                position: 'fixed',
+                                top: (classButtonRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+                                left: classButtonRef.current?.getBoundingClientRect().left ?? 0,
+                              }}
+                              className="w-56 bg-white rounded-2xl shadow-2xl border border-slate-200/90 z-[9999] py-1.5 max-h-72 overflow-y-auto animate-fadeIn normal-case font-normal text-slate-800"
+                            >
+                              <div className="px-3 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 flex items-center justify-between">
+                                <span>Pilih Filter Kelas</span>
+                                <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded text-[10px]">
+                                  {activeClasses.length} Kelas
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedClassFilter('');
+                                  setIsClassColumnDropdownOpen(false);
+                                }}
+                                className={`w-full text-left px-3 py-2 text-xs font-bold transition-colors flex items-center justify-between cursor-pointer ${
+                                  selectedClassFilter === '' ? 'bg-emerald-50 text-emerald-700 font-black' : 'text-slate-700 hover:bg-slate-50'
+                                }`}
+                              >
+                                <div className="flex items-center space-x-2">
+                                  {selectedClassFilter === '' && <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
+                                  <span>Semua Kelas</span>
+                                </div>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-mono">
+                                  {students.length}
+                                </span>
+                              </button>
+
+                              {activeClasses.map((c) => {
+                                const count = students.filter((s) => matchStudentToClass(s, c)).length;
+                                const isSelected = selectedClassFilter === c.name;
+                                return (
+                                  <button
+                                    key={c.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedClassFilter(c.name);
+                                      setIsClassColumnDropdownOpen(false);
+                                    }}
+                                    className={`w-full text-left px-3 py-2 text-xs font-bold transition-colors flex items-center justify-between cursor-pointer ${
+                                      isSelected ? 'bg-emerald-50 text-emerald-700 font-black' : 'text-slate-700 hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    <div className="flex items-center space-x-2">
+                                      {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
+                                      <span>{c.name}</span>
+                                    </div>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-mono">
+                                      {count}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </>,
+                          document.body
+                        )}
+                      </div>
+                    </th>
                     <th className="py-2.5 px-3 text-center">Nilai</th>
                     <th className="py-2.5 px-3 text-right">Aksi</th>
                   </tr>
@@ -1702,7 +1734,16 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                             {st.nisn}
                           </td>
                           <td className="py-2.5 px-3 font-bold text-slate-900">{st.name}</td>
-                          <td className="py-2.5 px-3 text-slate-600">{st.className}</td>
+                          <td className="py-2.5 px-3">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedClassFilter(st.className)}
+                              className="font-bold text-slate-700 hover:text-emerald-700 hover:underline cursor-pointer transition-colors"
+                              title={`Klik untuk memfilter kelas ${st.className}`}
+                            >
+                              {st.className}
+                            </button>
+                          </td>
                           <td className="py-2.5 px-3 text-center font-bold text-emerald-700">
                             {st.score}
                           </td>
@@ -1940,15 +1981,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                 <Download className="w-3.5 h-3.5 shrink-0" />
                 <span>Ekspor Nilai ({selectedClassFilter ? selectedClassFilter.replace(/^Kelas\s+/i, '') : 'Semua'})</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setIsGoogleWorkspaceOpen(true)}
-                className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold rounded-xl text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer shrink-0 border border-emerald-300"
-                title="Ekspor Rekap Penilaian Sikap langsung ke Google Sheets di Google Drive"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                <span>Google Sheets</span>
-              </button>
 
               <div className="text-right shrink-0 bg-white/10 backdrop-blur-xs px-3.5 py-2 rounded-2xl border border-white/20">
                 <div className="text-2xl sm:text-3xl font-black">{filteredStudents.length}</div>
@@ -1968,8 +2000,8 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                   onChange={(e) => setSelectedClassFilter(e.target.value)}
                   className="w-full sm:w-auto px-4 py-2.5 bg-emerald-50/90 border-2 border-emerald-500 rounded-2xl text-sm sm:text-base font-extrabold text-emerald-950 shadow-xs focus:outline-hidden focus:ring-2 focus:ring-emerald-600 cursor-pointer transition-all"
                 >
-                  <option value="">Semua Kelas ({classes.length} Kelas)</option>
-                  {classes.map((c) => (
+                  <option value="">Semua Kelas ({activeClasses.length} Kelas)</option>
+                  {activeClasses.map((c) => (
                     <option key={c.id} value={c.name}>
                       {c.name}
                     </option>
@@ -2924,14 +2956,22 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                   <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
                     Kelas:
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={formClassName}
                     onChange={(e) => setFormClassName(e.target.value)}
-                    placeholder="Kelas 7A"
                     required
-                    className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50"
-                  />
+                    className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50 cursor-pointer"
+                  >
+                    {!formClassName && <option value="">-- Pilih Kelas --</option>}
+                    {activeClasses.map((c) => (
+                      <option key={c.id} value={c.name}>
+                        {c.name}
+                      </option>
+                    ))}
+                    {!activeClasses.some((c) => c.name === formClassName) && formClassName && (
+                      <option value={formClassName}>{formClassName}</option>
+                    )}
+                  </select>
                 </div>
 
                 <div>
@@ -3329,15 +3369,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
           document.body
         )}
 
-      {/* Google Workspace (Drive & Sheets) Modal */}
-      <GoogleWorkspaceModal
-        isOpen={isGoogleWorkspaceOpen}
-        onClose={() => setIsGoogleWorkspaceOpen(false)}
-        students={students}
-        classes={classes}
-        schedules={schedules}
-        onImportStudents={handleImportStudentsFromGoogleSheets}
-      />
     </div>
   );
 };

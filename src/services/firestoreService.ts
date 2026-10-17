@@ -34,21 +34,15 @@ const TEACHER_CODES_COL = 'teacher_codes';
  */
 export async function initializeFirestoreIfNeeded(): Promise<boolean> {
   try {
-    const classesSnap = await getDocs(collection(db, CLASSES_COL));
-    recordQuotaUsage({ reads: classesSnap.size || 1 });
-    if (!classesSnap.empty) {
-      return false; // already seeded
+    const codesSnap = await getDocs(collection(db, TEACHER_CODES_COL));
+    recordQuotaUsage({ reads: codesSnap.size || 1 });
+    if (!codesSnap.empty) {
+      return false; // already initialized
     }
 
     const batch = writeBatch(db);
 
-    // Seed default classes
-    for (const c of DEFAULT_CLASSES) {
-      const ref = doc(db, CLASSES_COL, c.id);
-      batch.set(ref, c);
-    }
-
-    // Seed default teacher login codes
+    // Only seed teacher codes (ADMIN123 and GURU123). No dummy classes or students.
     for (const tc of DEFAULT_TEACHER_CODES) {
       const ref = doc(db, TEACHER_CODES_COL, tc.id);
       batch.set(ref, tc);
@@ -56,12 +50,8 @@ export async function initializeFirestoreIfNeeded(): Promise<boolean> {
 
     await batch.commit();
     recordQuotaUsage({
-      writes: DEFAULT_CLASSES.length + DEFAULT_TEACHER_CODES.length,
-      storageBytes: calculateRealtimeStorageSize(
-        0,
-        DEFAULT_CLASSES.length,
-        DEFAULT_TEACHER_CODES.length
-      ),
+      writes: DEFAULT_TEACHER_CODES.length,
+      storageBytes: calculateRealtimeStorageSize(0, 0, DEFAULT_TEACHER_CODES.length),
     });
     return true;
   } catch (error) {
@@ -610,6 +600,27 @@ export async function deduplicateClassesInDb(): Promise<{
 /**
  * Remove classes that have zero enrolled students from Firestore
  */
+/**
+ * Save classes to Firestore database
+ */
+export async function saveClassesInDb(classesToSave: ClassRoom[]) {
+  if (!classesToSave || classesToSave.length === 0) return;
+  try {
+    const batch = writeBatch(db);
+    for (const cls of classesToSave) {
+      if (!cls || !cls.id) continue;
+      const ref = doc(db, CLASSES_COL, cls.id);
+      batch.set(ref, cleanObject(cls), { merge: true });
+    }
+    await batch.commit();
+  } catch (err) {
+    console.warn('saveClassesInDb error:', err);
+  }
+}
+
+/**
+ * Remove classes that have zero enrolled students from Firestore, preserving default school classes
+ */
 export async function clearEmptyClassesInDb(activeClassNames: string[]): Promise<number> {
   const activeNormalized = new Set(
     activeClassNames.map((cn) => cn.toLowerCase().replace(/^(kelas|class)\s*/i, '').replace(/[^a-z0-9]/g, ''))
@@ -623,6 +634,7 @@ export async function clearEmptyClassesInDb(activeClassNames: string[]): Promise
     const data = d.data() as ClassRoom;
     const nameKey = (data.name || '').toLowerCase().replace(/^(kelas|class)\s*/i, '').replace(/[^a-z0-9]/g, '');
     const idKey = d.id.toLowerCase().replace(/^(class-|kelas-)/i, '').replace(/[^a-z0-9]/g, '');
+    // If this class has NO active enrolled students in the imported student list, delete it
     if (!activeNormalized.has(nameKey) && !activeNormalized.has(idKey)) {
       toDelete.push(d.ref);
     }
@@ -840,19 +852,83 @@ export async function resetDatabaseToDefaultsInDb(): Promise<void> {
   // 3. Clear custom teacher codes
   await clearAllTeacherCodesInDb();
 
-  // 4. Seed clean defaults
+  // 4. Seed clean default teacher codes only (NO dummy classes, NO dummy students)
   const seedBatch = writeBatch(db);
-  for (const c of DEFAULT_CLASSES) {
-    seedBatch.set(doc(db, CLASSES_COL, c.id), cleanObject(c));
-  }
-  for (const s of DEFAULT_STUDENTS) {
-    const standardId = getStudentDocId(s.nisn);
-    seedBatch.set(doc(db, STUDENTS_COL, standardId), cleanObject({ ...s, id: standardId }));
-  }
   for (const tc of DEFAULT_TEACHER_CODES) {
     seedBatch.set(doc(db, TEACHER_CODES_COL, tc.id), cleanObject(tc));
   }
   await seedBatch.commit();
+}
+
+/**
+ * Automatically purge any legacy dummy classes (e.g. class-7a..7i with 0 students)
+ * and demo student accounts from Firestore so that classes and students only come from imported data.
+ */
+export async function purgeLegacyDummyDataInDb(): Promise<void> {
+  try {
+    // 1. Check and delete demo students (e.g. std-trial-01 or NISN SISWA123 or dummy names)
+    const stdSnap = await getDocs(collection(db, STUDENTS_COL));
+    const demoStudentRefs: any[] = [];
+    const activeClassNames = new Set<string>();
+
+    stdSnap.forEach((d) => {
+      const data = d.data() as Student;
+      const nisnUpper = (data.nisn || '').trim().toUpperCase();
+      const nameUpper = (data.name || '').toUpperCase();
+      if (
+        d.id === 'std-trial-01' ||
+        nisnUpper === 'SISWA123' ||
+        nameUpper.includes('SISWA UJI COBA') ||
+        nameUpper.includes('DEMO 7A') ||
+        nameUpper.includes('SISWA CONTOH')
+      ) {
+        demoStudentRefs.push(d.ref);
+      } else {
+        if (data.className) activeClassNames.add(data.className);
+      }
+    });
+
+    if (demoStudentRefs.length > 0) {
+      const batch = writeBatch(db);
+      demoStudentRefs.forEach((ref) => batch.delete(ref));
+      await batch.commit();
+    }
+
+    // 2. Check and delete classes that have no active students or are legacy dummy classes
+    const classSnap = await getDocs(collection(db, CLASSES_COL));
+    if (!classSnap.empty) {
+      const activeNormalized = new Set(
+        Array.from(activeClassNames).map((cn) =>
+          cn.toLowerCase().replace(/^(kelas|class)\s*/i, '').replace(/[^a-z0-9]/g, '')
+        )
+      );
+
+      const dummyClassRefs: any[] = [];
+      classSnap.forEach((d) => {
+        const data = d.data() as ClassRoom;
+        const nameKey = (data.name || '').toLowerCase().replace(/^(kelas|class)\s*/i, '').replace(/[^a-z0-9]/g, '');
+        const idKey = d.id.toLowerCase().replace(/^(class-|kelas-)/i, '').replace(/[^a-z0-9]/g, '');
+        // If this class has 0 students in active imported students, delete it from Firestore
+        if (!activeNormalized.has(nameKey) && !activeNormalized.has(idKey)) {
+          dummyClassRefs.push(d.ref);
+        }
+      });
+
+      if (dummyClassRefs.length > 0) {
+        const batch = writeBatch(db);
+        dummyClassRefs.forEach((ref) => batch.delete(ref));
+        await batch.commit();
+      }
+    }
+
+    // 3. Remove demo teacher code tc-03 / GURU7A if present
+    const tcSnap = await getDoc(doc(db, TEACHER_CODES_COL, 'tc-03'));
+    if (tcSnap.exists()) {
+      await deleteDoc(doc(db, TEACHER_CODES_COL, 'tc-03'));
+    }
+  } catch (err) {
+    console.warn('purgeLegacyDummyDataInDb error:', err);
+  }
 }
 
 /**

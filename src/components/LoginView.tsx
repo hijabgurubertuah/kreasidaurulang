@@ -55,7 +55,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
     }
 
     // 2. Kode Khusus Masuk Sebagai Guru (guru123)
-    if (cleanLower === 'guru123' || cleanLower === 'guru2026') {
+    if (cleanLower === 'guru123') {
       saveLastCode(clean);
       onLoginSuccess({
         role: 'teacher',
@@ -65,29 +65,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
       return;
     }
 
-    // 3. Kode Khusus Uji Coba Halaman Siswa (siswa123)
-    if (cleanLower === 'siswa123') {
-      saveLastCode(clean);
-      const demoStudent = students[0] || {
-        id: 'std-trial-01',
-        nisn: 'SISWA123',
-        name: 'Siswa Uji Coba (Demo 7A)',
-        classId: 'class-7a',
-        className: 'Kelas 7A',
-        score: 80,
-        projectTitle: 'Pot Gantung Tanaman dari Botol Plastik',
-        notes: 'Akun uji coba untuk memantau nilai sikap kreasi daur ulang.',
-      };
-      onLoginSuccess({
-        role: 'student',
-        identifier: demoStudent.nisn,
-        name: demoStudent.name,
-        studentData: demoStudent,
-      });
-      return;
-    }
-
-    // 4. Cek NISN Siswa dari database
+    // 3. Cek NISN Siswa dari database (hanya data siswa riil yang di-import ke Firebase)
     const foundStudent = students.find(
       (s) => s.nisn.toLowerCase() === cleanLower
     );

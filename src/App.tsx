@@ -8,7 +8,7 @@ import { AdminPortalView } from './components/AdminPortalView';
 import { AdminSyncModal } from './components/AdminSyncModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { CriteriaSidebar } from './components/CriteriaSidebar';
-import { ToastProvider } from './components/ToastProvider';
+import { ToastProvider, useToast } from './components/ToastProvider';
 import {
   ClassRoom,
   Student,
@@ -30,9 +30,17 @@ import {
   calculateStudentAverageScore,
 } from './utils/scheduleHelper';
 import {
+  loadClassesFromLocal,
+  saveClassesToLocal,
+  loadStudentsFromLocal,
+  saveStudentsToLocal,
+  consolidateClasses,
+} from './utils/classHelper';
+import {
   initializeFirestoreIfNeeded,
   listenToStudents,
   listenToClasses,
+  saveClassesInDb,
   listenToTeacherCodes,
   createTeacherCodeInDb,
   deleteTeacherCodeInDb,
@@ -62,9 +70,16 @@ import { CheckCircle2, X } from 'lucide-react';
 
 const SESSION_KEY = 'smpn1bks_session_user';
 
-export default function App() {
-  const [classes, setClasses] = useState<ClassRoom[]>(DEFAULT_CLASSES);
-  const [students, setStudents] = useState<Student[]>(DEFAULT_STUDENTS);
+function AppContent() {
+  const { tampilToast } = useToast();
+  const [classes, setClasses] = useState<ClassRoom[]>(() => {
+    const cachedClasses = loadClassesFromLocal();
+    const cachedStudents = loadStudentsFromLocal();
+    return consolidateClasses(cachedClasses, cachedStudents);
+  });
+  const [students, setStudents] = useState<Student[]>(() => {
+    return loadStudentsFromLocal();
+  });
   const [teacherCodes, setTeacherCodes] = useState<TeacherCode[]>(DEFAULT_TEACHER_CODES);
   const [schedules, setSchedules] = useState<MeetingSchedule[]>([]);
   const [criteria, setCriteria] = useState<EvaluationCriteriaConfig>(DEFAULT_EVALUATION_CRITERIA);
@@ -133,6 +148,13 @@ export default function App() {
         if (!isMounted) return;
         setFirebaseConnected(true);
         setStudents(updatedStudents);
+        saveStudentsToLocal(updatedStudents);
+
+        setClasses((prevClasses) => {
+          const consolidated = consolidateClasses(prevClasses, updatedStudents);
+          saveClassesToLocal(consolidated);
+          return consolidated;
+        });
       },
       () => setFirebaseConnected(false)
     );
@@ -141,9 +163,11 @@ export default function App() {
     const unsubscribeClasses = listenToClasses(
       (updatedClasses) => {
         if (!isMounted) return;
-        if (updatedClasses.length > 0) {
-          setClasses(updatedClasses);
-        }
+        setClasses((prevClasses) => {
+          const consolidated = consolidateClasses(updatedClasses, students);
+          saveClassesToLocal(consolidated);
+          return consolidated;
+        });
       },
       () => {}
     );
@@ -342,8 +366,7 @@ export default function App() {
         })
       );
 
-      setSaveSuccessNotification(`Nilai uji coba Pertemuan ${meetingNumber} berhasil direset untuk ${count} siswa!`);
-      setTimeout(() => setSaveSuccessNotification(null), 4000);
+      tampilToast('Tersimpan', 'success', 800);
       return count;
     }
 
@@ -407,8 +430,7 @@ export default function App() {
         ? `Berhasil mereset pertemuan tanpa tanggal. Nilai pada ${configuredCount} pertemuan berjadwal tetap dipertahankan!`
         : `Berhasil mereset seluruh penilaian untuk ${count} data siswa!`;
 
-    setSaveSuccessNotification(notificationMsg);
-    setTimeout(() => setSaveSuccessNotification(null), 4000);
+    tampilToast('Tersimpan', 'success', 800);
     return count;
   };
 
@@ -431,15 +453,24 @@ export default function App() {
       const idx = prev.findIndex(
         (s) => s.id === standardId || s.nisn.trim().toLowerCase() === cleanNisn.toLowerCase()
       );
+      let next: Student[];
       if (idx !== -1) {
-        const copy = [...prev];
-        copy[idx] = { ...copy[idx], ...standardized };
-        return copy;
+        next = [...prev];
+        next[idx] = { ...next[idx], ...standardized };
+      } else {
+        next = [standardized, ...prev];
       }
-      return [standardized, ...prev];
+      saveStudentsToLocal(next);
+      setClasses((prevCls) => {
+        const consolidated = consolidateClasses(prevCls, next);
+        saveClassesToLocal(consolidated);
+        return consolidated;
+      });
+      return next;
     });
 
     await saveStudentInDb(standardized);
+    tampilToast('Tersimpan', 'success', 800);
     await addSystemLog(
       isEdit ? 'EDIT_SISWA' : 'TAMBAH_SISWA',
       `${isEdit ? 'Memperbarui' : 'Menambahkan'} siswa "${student.name}" (NISN: ${cleanNisn}) di ${student.className}`,
@@ -450,10 +481,18 @@ export default function App() {
   // Delete single student - deletes immediately from Firebase
   const handleDeleteStudent = async (studentId: string) => {
     const student = students.find((s) => s.id === studentId);
-    setStudents((prev) => prev.filter((s) => s.id !== studentId));
+    setStudents((prev) => {
+      const next = prev.filter((s) => s.id !== studentId);
+      saveStudentsToLocal(next);
+      setClasses((prevCls) => {
+        const consolidated = consolidateClasses(prevCls, next);
+        saveClassesToLocal(consolidated);
+        return consolidated;
+      });
+      return next;
+    });
     await deleteStudentInDb(studentId);
-    setSaveSuccessNotification('Siswa berhasil dihapus langsung dari database Firebase.');
-    setTimeout(() => setSaveSuccessNotification(null), 3000);
+    tampilToast('Terhapus', 'success', 800);
     if (student) {
       await addSystemLog(
         'HAPUS_SISWA',
@@ -466,12 +505,18 @@ export default function App() {
   // Bulk Delete students - deletes immediately from Firebase seketika
   const handleBulkDeleteStudents = async (studentIds: string[]) => {
     const idsSet = new Set(studentIds);
-    setStudents((prev) => prev.filter((s) => !idsSet.has(s.id)));
+    setStudents((prev) => {
+      const next = prev.filter((s) => !idsSet.has(s.id));
+      saveStudentsToLocal(next);
+      setClasses((prevCls) => {
+        const consolidated = consolidateClasses(prevCls, next);
+        saveClassesToLocal(consolidated);
+        return consolidated;
+      });
+      return next;
+    });
     const deletedCount = await batchDeleteStudentsInDb(studentIds);
-    setSaveSuccessNotification(
-      `${deletedCount} siswa berhasil dihapus seketika dari Firebase Firestore & tersinkronisasi ke seluruh perangkat!`
-    );
-    setTimeout(() => setSaveSuccessNotification(null), 4000);
+    tampilToast('Terhapus', 'success', 800);
     await addSystemLog(
       'HAPUS_SISWA_MASSAL',
       `Menghapus secara massal ${deletedCount} siswa dari database`,
@@ -485,10 +530,13 @@ export default function App() {
     newClasses: ClassRoom[]
   ) => {
     await batchSyncStudentsAndClasses(newStudents, newClasses);
-    setSaveSuccessNotification(
-      `Berhasil menyinkronkan ${newStudents.length} siswa langsung ke Firebase Firestore!`
-    );
-    setTimeout(() => setSaveSuccessNotification(null), 4000);
+    setStudents(newStudents);
+    saveStudentsToLocal(newStudents);
+    const consolidated = consolidateClasses(newClasses, newStudents);
+    setClasses(consolidated);
+    saveClassesToLocal(consolidated);
+    await saveClassesInDb(consolidated);
+    tampilToast('Tersimpan', 'success', 800);
     await addSystemLog(
       'SINKRONISASI_CSV',
       `Melakukan sinkronisasi data CSV/Spreadsheet berisi ${newStudents.length} data siswa`,
@@ -640,8 +688,7 @@ export default function App() {
     activePage === 'student-view';
 
   return (
-    <ToastProvider>
-      <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-emerald-200 selection:text-emerald-900">
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-emerald-200 selection:text-emerald-900">
       {/* Top Navigation - Tidak tampil saat halaman modul (admin atau siswa) agar full screen tanpa menu/bar lain */}
       {activePage !== 'login' && !isModuleFullScreen && (
         <Navbar
@@ -787,6 +834,13 @@ export default function App() {
       {/* Offline Mode Alert */}
       <OfflineIndicator />
     </div>
-  </ToastProvider>
-);
+  );
+}
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
+  );
 }

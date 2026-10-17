@@ -10,7 +10,7 @@ export const sanitizeHtml = (html: string, decode = false) => {
   const content = decode ? decodeEntities(html) : html;
   
   DOMPurify.addHook('uponSanitizeElement', (node, data) => {
-    if (data.tagName === 'iframe') {
+    if (data.tagName === 'iframe' && node instanceof Element) {
       const src = node.getAttribute('src') || '';
       const allowedDomains = ['youtube.com', 'youtube-nocookie.com', 'player.vimeo.com', 'drive.google.com'];
       if (!allowedDomains.some(domain => src.includes(domain))) {

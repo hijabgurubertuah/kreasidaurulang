@@ -13,6 +13,7 @@ import { ClassRoom, Student, MeetingSchedule } from '../types';
 import { getPredicate } from '../utils/excelExport';
 import { getScoreColorScheme, getQuoteForScore } from './StudentPortalView';
 import { isMeetingOpened, formatIndonesianDate } from '../utils/scheduleHelper';
+import { matchStudentToClass } from '../utils/classHelper';
 
 const CLASS_GRADIENTS = [
   // 1. Green (Emerald)
@@ -92,15 +93,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [selectedStudentForModal, setSelectedStudentForModal] = useState<Student | null>(null);
   const [selectedMeetingIndex, setSelectedMeetingIndex] = useState<number>(0);
 
-  // Auto-select Kelas 7A by default if no class is selected yet
+  // Auto-select first available class from imported classes if none selected
   React.useEffect(() => {
     if (!selectedClassFilter && classes.length > 0) {
-      const class7A = classes.find((c) =>
-        c.name.toLowerCase().replace(/\s+/g, '').includes('7a')
-      );
-      if (class7A) {
-        setSelectedClassFilter(class7A.name);
-      } else if (classes[0]) {
+      if (classes[0]) {
         setSelectedClassFilter(classes[0].name);
       }
     }
@@ -109,10 +105,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Calculate statistics per class
   const classStats = useMemo(() => {
     return classes.map((c) => {
-      const classStudents = students.filter((s) => s.classId === c.id);
+      const classStudents = students.filter((s) => matchStudentToClass(s, c));
       const studentCount = classStudents.length;
-      const totalScore = classStudents.reduce((sum, s) => sum + s.score, 0);
-      const avgScore = studentCount > 0 ? Math.round(totalScore / studentCount) : 0;
+      const totalScore = classStudents.reduce((sum, s) => sum + (typeof s.score === 'number' ? s.score : 80), 0);
+      const avgScore = studentCount > 0 ? Math.round(totalScore / studentCount) : 80;
       const pred = getPredicate(avgScore);
 
       return {
@@ -134,7 +130,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const filteredStudents = useMemo(() => {
     return students
       .filter((s) => {
-        return selectedClassFilter ? s.className === selectedClassFilter : true;
+        if (!selectedClassFilter) return true;
+        const targetClean = selectedClassFilter.replace(/^Kelas\s+/i, '').trim().toLowerCase();
+        const sClean = (s.className || '').replace(/^Kelas\s+/i, '').trim().toLowerCase();
+        return s.className === selectedClassFilter || sClean === targetClean;
       })
       .sort((a, b) => {
         // Sort primary by class name (natural class order)
